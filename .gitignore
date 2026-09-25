@@ -41,3 +41,54 @@ $RECYCLE.BIN/
 
 # Local environment variables
 .env
+
+
+# Salesforce / SFDX / CCI
+.cci
+.sfdx
+.sf/
+/src.orig
+/src
+
+# Python
+*.pyc
+__pycache__
+
+# Robot Framework results
+robot/UST-EASY/results/
+
+# Editors
+*.sublime-project
+*.sublime-workspace
+.vscode
+.idea
+.project
+.settings
+
+# Misc
+ignore
+
+# Illuminated Cloud (IntelliJ IDEA)
+IlluminatedCloud
+out
+*.iml
+
+# CumulusCI
+/test_results.*
+
+# Added by Illuminated Cloud
+.localdev/
+/IlluminatedCloud/
+/out/
+target/
+/.illuminatedCloud/
+**/tsconfig*.json
+**/*.tsbuildinfo
+
+**/graphql.config.yml
+ai-logs
+ai-logs/
+.playwright-mcp
+.playwright-mcp/
+.idea
+.idea/

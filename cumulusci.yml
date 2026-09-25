@@ -1,0 +1,24 @@
+minimum_cumulusci_version: "4.10.1"
+project:
+  name: UST-RecordClone
+  package:
+    name: UST-RecordClone
+    api_version: "67.0"
+  git:
+  source_format: sfdx
+
+tasks:
+  robot:
+    options:
+      suites: robot/UST-RecordClone/tests
+      options:
+        outputdir: robot/UST-RecordClone/results
+
+  robot_testdoc:
+    options:
+      path: robot/UST-RecordClone/tests
+      output: robot/UST-RecordClone/doc/UST-RecordClone_tests.html
+
+  run_tests:
+    options:
+      required_org_code_coverage_percent: 75
