@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description
+  >Sample data only. Child of an application, looks up a shared question and a sibling requirement response.</description>
+    <label>Sample Question Response</label>
+    <nameField>
+        <label>Sample Question Response Name</label>
+        <type>Text</type>
+    </nameField>
+    <pluralLabel>Sample Question Responses</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+</CustomObject>

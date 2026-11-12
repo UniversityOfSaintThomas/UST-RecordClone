@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>No_Response_On_Withdrawn_App</fullName>
+    <active>true</active>
+    <description
+  >A new response cannot be added to a withdrawn application. Fires on a clone of a withdrawn application, not on the original rows.</description>
+    <errorConditionFormula
+  >AND(ISNEW(), ISPICKVAL(Application__r.Status__c, "Withdrawn"))</errorConditionFormula>
+    <errorMessage
+  >Cannot add a requirement response to a withdrawn application.</errorMessage>
+</ValidationRule>

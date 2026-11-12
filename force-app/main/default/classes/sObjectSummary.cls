@@ -78,6 +78,11 @@ public with sharing class sObjectSummary {
       if (dfr.isUnique()) {
         errors.add('IS_UNIQUE');
       }
+      // External IDs identify the record in another system. A copy would give two records the
+      // same key, so the next sync from that system could update the wrong one.
+      if (dfr.isExternalId()) {
+        errors.add('IS_EXTERNAL_ID');
+      }
       if (dfr.getLocalName().endsWith('__pc')) {
         errors.add('IS_PERSON_ACCOUNT');
       }

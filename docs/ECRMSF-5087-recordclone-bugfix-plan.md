@@ -179,3 +179,56 @@ than hand-roll a parallel per-object Flow solution, because:
 - A hand-rolled per-object Flow solution would need to reimplement equivalent
   logic (name-field handling, child re-parenting, exclusion rules) per object,
   multiplying maintenance surface for the same underlying problem.
+
+## Implementation Status (updated 2026-11-12)
+
+### Sample data and harness
+
+The root causes below were checked against a sample dataset instead of guessed. It lives outside
+`force-app`, so it is never packaged, and `dev_org` builds it automatically.
+
+| What                                                                   | Where                                              |
+| ---------------------------------------------------------------------- | -------------------------------------------------- |
+| Sample objects, fields, validation rule, lookup filter, permission set | `unpackaged/sample/model`                          |
+| Harness class and its test (dev orgs only)                             | `unpackaged/sample/tools`                          |
+| Snowfakery dataset (49 applications, ~540 rows)                        | `datasets/dev/dev.recipe.yml`                      |
+| Step that breaks two scenarios after the load                          | `scripts/arm_sample_clone_failures.apex`           |
+| Full harness report, one file per part                                 | `scripts/clone_harness/part1.apex` to `part4.apex` |
+
+CumulusCI tasks and flows (all in `cumulusci.yml`):
+
+- `cci flow run sample_data --org dev` adds the sample data to an existing dev org.
+- `cci flow run check_clone_harness --org dev` is the pass/fail gate; it fails and names the case that misbehaved.
+- `dev_org` includes all of it through `config_dev`. A fresh scratch org built with `dev_org` alone reproduces the results.
+- Full report: `sf apex run --file scripts/clone_harness/part1.apex --target-org <alias>`, then parts 2 to 4. `cci` does not print debug logs, which is why the report is separate. One run is limited to 100 SOQL queries, hence four parts.
+
+The sample objects are a stand-in. They have the same shape as the Banner objects (shared definition
+lookups, sibling lookups, external IDs, a standard Opportunity), not the same schema. They show which
+classes of problem RecordClone mishandles. They cannot say which fields on the real objects need
+attention; that still needs the Enterprise team's list.
+
+### Findings that change the root-cause analysis
+
+- **Bug 1 was larger than described.** Only the parent `insert` was caught. Child inserts, and every insert on the Flow path, threw an uncaught `DmlException`. The LWC read only `fieldErrors` and `pageErrors`, so a thrown Apex error produced an empty toast. The "No Data" text was never shown either; users saw "Unknown error".
+- **Bug 2 confirmed.** A non-unique external ID was copied on the parent and on every child type (19 findings across the harness).
+- **Bug 3 is two different problems.**
+  - Lookups to shared definition records (a question or requirement) carry over correctly. Nothing to fix.
+  - A lookup to a _sibling_ record in the same clone (Question Response to Requirement Response) is copied unchanged, so the clone points at the original application's record. No error is raised. 120 of 120 on the bulk case.
+- **Bug 4 refined.** The configurator lists every relationship pointing at the object, plain lookups included. A child object with a required field the clone must drop (a required unique field) is shown as clonable but can never be inserted.
+- **Not in the original plan:** on the Flow path the child-name format from custom metadata is ignored (`sObjectSummary.getByRecordId(Id)` has an inverted null check). Child objects also ignore `ExcludedFieldNames__c`.
+
+### Fix status
+
+| Fix                                                 | Status                                                                                                 |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1. Error propagation                                | Done (`983fb2a`). Message names the object, status code, reason and fields. A failed clone rolls back. |
+| 2. Exclude external IDs                             | Done. `IS_EXTERNAL_ID` added in `sObjectSummary`. Harness findings for it: 19 to 0.                    |
+| 3. Sibling reference remap                          | Not started. Detectable and fixable from the sample data.                                              |
+| 4. Config-time check for children that cannot clone | Not started.                                                                                           |
+| Child name format (inverted null check)             | Not started.                                                                                           |
+
+### Known side effect
+
+`RecordCloneHarness` is a dev-only class without a test. Where it is deployed, org-wide coverage drops
+from 88% to 46%, below the 75% that `run_tests` requires. No CI flow deploys it. Anyone running
+`cci task run run_tests --org dev` by hand sees the lower number.

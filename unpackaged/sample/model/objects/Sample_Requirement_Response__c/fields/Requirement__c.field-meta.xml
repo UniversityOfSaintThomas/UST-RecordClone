@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Requirement__c</fullName>
+    <label>Requirement</label>
+    <description
+  >Shared requirement definition. Should carry over unchanged.</description>
+    <type>Lookup</type>
+    <referenceTo>Sample_Requirement__c</referenceTo>
+    <relationshipName>Requirement_Responses</relationshipName>
+    <relationshipLabel>Requirement Responses</relationshipLabel>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <required>false</required>
+    <externalId>false</externalId>
+</CustomField>

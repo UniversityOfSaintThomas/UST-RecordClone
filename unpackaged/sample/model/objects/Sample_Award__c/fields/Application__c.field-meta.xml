@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Application__c</fullName>
+    <label>Application</label>
+    <description>Parent application.</description>
+    <type>MasterDetail</type>
+    <referenceTo>Sample_Application__c</referenceTo>
+    <relationshipName>Awards</relationshipName>
+    <relationshipLabel>Awards</relationshipLabel>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+    <externalId>false</externalId>
+</CustomField>

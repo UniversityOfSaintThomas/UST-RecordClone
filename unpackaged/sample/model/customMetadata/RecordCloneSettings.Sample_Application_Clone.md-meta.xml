@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomMetadata
+  xmlns="http://soap.sforce.com/2006/04/metadata"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+>
+    <label>Sample Application Clone</label>
+    <protected>false</protected>
+    <values>
+        <field>ChildRecordNameType__c</field>
+        <value xsi:type="xsd:string">Cloned - [Child Record Name]</value>
+    </values>
+    <values>
+        <field>ChildRelationshipNames__c</field>
+        <value
+      xsi:type="xsd:string"
+    >Requirement_Responses__r,Question_Responses__r,Awards__r,Opportunities__r</value>
+    </values>
+    <values>
+        <field>ExcludedFieldNames__c</field>
+        <value xsi:type="xsd:string">Status__c</value>
+    </values>
+    <values>
+        <field>ObjectName__c</field>
+        <value xsi:type="xsd:string">Sample_Application__c</value>
+    </values>
+</CustomMetadata>

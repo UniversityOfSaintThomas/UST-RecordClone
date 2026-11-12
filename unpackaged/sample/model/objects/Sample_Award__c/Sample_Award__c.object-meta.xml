@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description
+  >Sample data only. Master-detail child of an application with an auto-number name.</description>
+    <label>Sample Award</label>
+    <nameField>
+        <displayFormat>AWD-{00000}</displayFormat>
+        <label>Sample Award Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Sample Awards</pluralLabel>
+    <sharingModel>ControlledByParent</sharingModel>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+</CustomObject>
