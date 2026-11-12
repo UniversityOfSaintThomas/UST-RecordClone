@@ -153,17 +153,23 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
 
   handleErrors = (errors) => {
     console.log(errors);
-    let errorMessage = "Unknown error";
+    let errorMessage = "";
     if (errors && errors.body) {
-      errorMessage = "";
       if (errors.body.fieldErrors) {
         errorMessage += this.buildErrorMessage(errors.body.fieldErrors);
       }
       if (errors.body.pageErrors) {
         errorMessage += this.buildErrorMessage(errors.body.pageErrors);
       }
+      // Apex exceptions (AuraHandledException) put their text in body.message
+      if (!errorMessage && typeof errors.body.message === "string") {
+        errorMessage = errors.body.message;
+      }
     }
-    this.showErrorToast(errorMessage);
+    if (!errorMessage && errors && typeof errors.message === "string") {
+      errorMessage = errors.message;
+    }
+    this.showErrorToast(errorMessage || "Unknown error");
   };
 
   showSuccessToast = (title, message) => {
@@ -218,7 +224,9 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     })
       .then((clonedRecord) => {
         if (!clonedRecord) {
-          throw new Error("No Data");
+          throw new Error(
+            "The clone did not return a new record. Check that a new record name is entered and that you can access the record."
+          );
         }
         this.showSuccessToast(
           "Clone well done!",

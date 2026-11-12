@@ -81,15 +81,33 @@ global with sharing class RecordCloneController {
       return null;
     }
 
-    // exec clone
-    sObject clonedRecord = RecordCloneHandler.cloneRecord(
-      originalRecord,
-      sObjSummary,
-      newParentRecordName,
-      childRecordNameType
-    );
+    // exec clone. All-or-nothing: if the parent or any child fails to insert,
+    // roll back so the user is not left with a half-cloned record set.
+    Savepoint beforeClone = Database.setSavepoint();
+    try {
+      return RecordCloneHandler.cloneRecord(
+        originalRecord,
+        sObjSummary,
+        newParentRecordName,
+        childRecordNameType
+      );
+    } catch (RecordCloneHandler.RecordCloneException e) {
+      Database.rollback(beforeClone);
+      throw buildAuraException(e.getMessage());
+    }
+  }
 
-    return clonedRecord;
+  /**
+   * Builds an AuraHandledException whose message reaches the browser.
+   * Without setMessage, getMessage() on the client returns "Script-thrown exception".
+   *
+   * @param message The user-facing message
+   * @return Exception ready to be thrown from an AuraEnabled method
+   */
+  private static AuraHandledException buildAuraException(String message) {
+    AuraHandledException auraException = new AuraHandledException(message);
+    auraException.setMessage(message);
+    return auraException;
   }
 
   // support for multiple record cloning

@@ -165,6 +165,65 @@ private class RecordCloneHandlerTest {
   }
 
   @IsTest
+  private static void testCloneRecordThrowsOnParentFailure() {
+    Account acc = new Account(Name = 'TestAccount');
+    insert acc;
+    sObjectSummary accSummary = new sObjectSummary(
+      Account.sObjectType.getDescribe()
+    );
+
+    String thrownMessage;
+    try {
+      RecordCloneHandler.cloneRecord(
+        acc,
+        accSummary,
+        'x'.repeat(300),
+        RecordCloneChildRecordNamePicklist.valueOriginalName
+      );
+    } catch (RecordCloneHandler.RecordCloneException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected a RecordCloneException');
+    Assert.isTrue(thrownMessage.contains('STRING_TOO_LONG'), thrownMessage);
+    Assert.isTrue(thrownMessage.contains('Account'), thrownMessage);
+  }
+
+  @IsTest
+  private static void testCloneRecordsThrowsOnChildFailure() {
+    // Flow / invocable path: children are inserted together after the parents
+    Account acc = new Account(Name = 'TestAccount');
+    insert acc;
+    insert new Opportunity(
+      Name = 'o'.repeat(115),
+      StageName = 'Prospecting',
+      CloseDate = Date.today(),
+      AccountId = acc.Id
+    );
+
+    sObjectSummary accSummary = sObjectSummary.getByRecordId(
+      acc.Id,
+      'Opportunities',
+      ''
+    );
+    accSummary.childRecordNameFormat = RecordCloneChildRecordNamePicklist.valueWithClonedAndDate;
+    List<sObject> originals = RecordCloneHandler.getOriginalRecords(
+      new List<Id>{ acc.Id },
+      accSummary
+    );
+
+    String thrownMessage;
+    try {
+      RecordCloneHandler.cloneRecords(originals, accSummary);
+    } catch (RecordCloneHandler.RecordCloneException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected a RecordCloneException');
+    Assert.isTrue(thrownMessage.contains('STRING_TOO_LONG'), thrownMessage);
+  }
+
+  @IsTest
   private static void testCloneRecords() {
     Account acc = new Account(Name = 'TestAccount');
     insert acc;

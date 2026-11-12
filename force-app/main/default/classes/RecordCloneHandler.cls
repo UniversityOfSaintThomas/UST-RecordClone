@@ -5,6 +5,13 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 public with sharing class RecordCloneHandler {
+  /**
+   * Raised when a clone cannot complete. The message names the object that
+   * failed and the reason Salesforce gave, so callers can show it to the user.
+   */
+  public class RecordCloneException extends Exception {
+  }
+
   // single records
   public static sObject getOriginalRecord(
     Id recordId,
@@ -74,8 +81,10 @@ public with sharing class RecordCloneHandler {
     // insert a parent object record
     try {
       insert cloned;
-    } catch (DMLException e) {
-      return null;
+    } catch (DmlException e) {
+      throw new RecordCloneException(
+        buildDmlMessage(sObjectSummary.label, new List<sObject>{ cloned }, e)
+      );
     }
 
     // cloning child records
@@ -163,11 +172,75 @@ public with sharing class RecordCloneHandler {
 
           children[i].put(childSummary.parentRelationshipField, cloned.Id);
         }
-        insert children;
+        try {
+          insert children;
+        } catch (DmlException e) {
+          throw new RecordCloneException(
+            buildDmlMessage(childSummary.label, children, e)
+          );
+        }
       }
     }
 
     return cloned;
+  }
+
+  /**
+   * Builds a readable message from a failed insert, naming the object, the
+   * status code, the reason and the fields involved. At most three failures are
+   * listed so the message still fits in a toast.
+   *
+   * @param fallbackLabel Label of the object to name when the failing row cannot be identified
+   * @param attempted The records the insert was attempted on, used to name each failing row's object
+   * @param dmlException The exception thrown by the insert
+   * @return Message describing which object failed and why
+   */
+  @TestVisible
+  private static String buildDmlMessage(
+    String fallbackLabel,
+    List<sObject> attempted,
+    DmlException dmlException
+  ) {
+    Integer failureCount = dmlException.getNumDml();
+    if (failureCount == 0) {
+      return 'Clone failed for ' +
+        fallbackLabel +
+        ': ' +
+        dmlException.getMessage();
+    }
+
+    Integer shownCount = Math.min(failureCount, 3);
+    List<String> parts = new List<String>();
+    for (Integer i = 0; i < shownCount; i++) {
+      String label = fallbackLabel;
+      Integer rowIndex = dmlException.getDmlIndex(i);
+      if (
+        attempted != null &&
+        rowIndex != null &&
+        rowIndex >= 0 &&
+        rowIndex < attempted.size()
+      ) {
+        label = attempted[rowIndex].getSObjectType().getDescribe().getLabel();
+      }
+
+      String part =
+        label +
+        ' - [' +
+        dmlException.getDmlStatusCode(i) +
+        '] ' +
+        dmlException.getDmlMessage(i);
+      List<String> fieldNames = dmlException.getDmlFieldNames(i);
+      if (fieldNames != null && !fieldNames.isEmpty()) {
+        part += ' (' + String.join(fieldNames, ', ') + ')';
+      }
+      parts.add(part);
+    }
+
+    String message = 'Clone failed. ' + String.join(parts, '; ');
+    if (failureCount > shownCount) {
+      message += ' (+' + (failureCount - shownCount) + ' more)';
+    }
+    return message;
   }
 
   private static String buildChildrenSelectQuery(sObjectSummary sObjSummary) {
@@ -224,7 +297,13 @@ public with sharing class RecordCloneHandler {
       }
     }
 
-    insert clonings;
+    try {
+      insert clonings;
+    } catch (DmlException e) {
+      throw new RecordCloneException(
+        buildDmlMessage(sObjectSummary.label, clonings, e)
+      );
+    }
 
     if (
       sObjectSummary.children != null &&
@@ -303,7 +382,13 @@ public with sharing class RecordCloneHandler {
         }
       }
 
-      insert childrens;
+      try {
+        insert childrens;
+      } catch (DmlException e) {
+        throw new RecordCloneException(
+          buildDmlMessage(sObjectSummary.label, childrens, e)
+        );
+      }
     }
 
     return clonings;

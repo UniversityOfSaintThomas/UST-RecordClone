@@ -580,6 +580,88 @@ private class RecordCloneTest {
   }
 
   @IsTest
+  private static void testExecCloneParentFailureSurfacesMessage() {
+    Account a = new Account(Name = 'Parent Failure Source');
+    insert a;
+
+    // Account.Name allows 255 characters, so this makes the parent insert fail
+    String tooLongName = 'x'.repeat(300);
+
+    String thrownMessage;
+    try {
+      RecordCloneController.execClone(
+        a.Id,
+        tooLongName,
+        '',
+        '',
+        RecordCloneChildRecordNamePicklist.valueOriginalName
+      );
+    } catch (AuraHandledException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected an AuraHandledException');
+    Assert.isTrue(
+      thrownMessage.contains('STRING_TOO_LONG'),
+      'Message should carry the status code: ' + thrownMessage
+    );
+    Assert.isTrue(
+      thrownMessage.contains('Account'),
+      'Message should name the object: ' + thrownMessage
+    );
+    Assert.areNotEqual(
+      'Script-thrown exception',
+      thrownMessage,
+      'setMessage must be called or the client only sees the generic text'
+    );
+  }
+
+  @IsTest
+  private static void testExecCloneChildFailureSurfacesMessageAndRollsBack() {
+    Account a = new Account(Name = 'Child Failure Source');
+    insert a;
+
+    // Opportunity.Name allows 120 characters. 'Cloned - ' + name + ' - yyyy/MM/dd HH:mm'
+    // adds 28 characters, so a 115 character name overflows only on the cloned child.
+    Opportunity o = new Opportunity(
+      Name = 'o'.repeat(115),
+      StageName = 'Prospecting',
+      CloseDate = Date.today(),
+      AccountId = a.Id
+    );
+    insert o;
+
+    String newParentName = 'Rolled Back Parent';
+    String thrownMessage;
+    try {
+      RecordCloneController.execClone(
+        a.Id,
+        newParentName,
+        'Opportunities',
+        '',
+        RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
+      );
+    } catch (AuraHandledException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected an AuraHandledException');
+    Assert.isTrue(
+      thrownMessage.contains('STRING_TOO_LONG'),
+      'Message should carry the status code: ' + thrownMessage
+    );
+    Assert.isTrue(
+      thrownMessage.contains('Opportunity'),
+      'Message should name the child object that failed: ' + thrownMessage
+    );
+    Assert.areEqual(
+      0,
+      [SELECT COUNT() FROM Account WHERE Name = :newParentName],
+      'Parent clone must be rolled back when a child fails'
+    );
+  }
+
+  @IsTest
   private static void debuggerTest() {
     // insert a record
     Case c = new Case(Subject = 'Test Case');

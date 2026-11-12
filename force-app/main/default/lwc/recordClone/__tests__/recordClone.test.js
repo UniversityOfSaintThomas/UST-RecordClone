@@ -282,14 +282,15 @@ describe("c-record-clone", () => {
       });
   });
 
-  it("throw Error when clone execution returns null", () => {
+  it("shows an error toast when clone execution returns null", () => {
     const element = createElement("c-record-clone", {
       is: RecordClone
     });
     document.body.appendChild(element);
+    const handler = jest.fn();
+    element.addEventListener(ShowToastEventName, handler);
 
-    const recordId = "MockRecordId";
-    element.recordId = recordId;
+    element.recordId = "MockRecordId";
     element.childRecordNameType = "originalName";
     execClone.mockResolvedValue(null);
     getNameFieldValueAdapter.emit("Test Record Name");
@@ -301,8 +302,50 @@ describe("c-record-clone", () => {
           element.shadowRoot.querySelector("lightning-button");
         cloneButton.click();
       })
+      .then(() => Promise.resolve())
       .then(() => {
-        expect(() => execClone()).toThrow(Error);
+        expect(execClone).toHaveBeenCalled();
+        expect(handler).toHaveBeenCalled();
+        expect(handler.mock.calls[0][0].detail.variant).toBe("error");
+        expect(handler.mock.calls[0][0].detail.message).toContain(
+          "did not return a new record"
+        );
+      });
+  });
+
+  it("shows the Apex exception message when clone execution is rejected", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
+    });
+    document.body.appendChild(element);
+    const handler = jest.fn();
+    element.addEventListener(ShowToastEventName, handler);
+
+    element.recordId = "MockRecordId";
+    element.childRecordNameType = "originalName";
+    const apexMessage =
+      "Clone failed. Opportunity - [STRING_TOO_LONG] Name: data value too large (Name)";
+    execClone.mockRejectedValue({
+      body: { message: apexMessage },
+      ok: false,
+      status: 400
+    });
+    getNameFieldValueAdapter.emit("Test Record Name");
+    getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
+
+    return Promise.resolve()
+      .then(() => {
+        const cloneButton =
+          element.shadowRoot.querySelector("lightning-button");
+        cloneButton.click();
+      })
+      .then(() => Promise.resolve())
+      .then(() => {
+        expect(execClone).toHaveBeenCalled();
+        expect(handler).toHaveBeenCalled();
+        expect(handler.mock.calls[0][0].detail.title).toBe("RecordClone Error");
+        expect(handler.mock.calls[0][0].detail.message).toBe(apexMessage);
+        expect(handler.mock.calls[0][0].detail.variant).toBe("error");
       });
   });
 
