@@ -224,6 +224,140 @@ private class RecordCloneHandlerTest {
   }
 
   @IsTest
+  private static void testCloneRecordRemapsSiblingReferences() {
+    // Contact.ReportsToId points at another contact. When both contacts are cloned, the cloned
+    // report must point at the cloned boss, not at the original boss.
+    Account acc = new Account(Name = 'Sibling Account');
+    insert acc;
+    Account other = new Account(Name = 'Other Account');
+    insert other;
+    Contact outsider = new Contact(LastName = 'Outsider', AccountId = other.Id);
+    insert outsider;
+    Contact boss = new Contact(
+      LastName = 'Boss',
+      AccountId = acc.Id,
+      ReportsToId = outsider.Id
+    );
+    insert boss;
+    Contact report = new Contact(
+      LastName = 'Report',
+      AccountId = acc.Id,
+      ReportsToId = boss.Id
+    );
+    insert report;
+
+    sObjectSummary summary = sObjectSummary.getByRecordId(
+      acc.Id,
+      'Contacts',
+      ''
+    );
+    sObject clonedAccount = RecordCloneHandler.cloneRecord(
+      RecordCloneHandler.getOriginalRecord(acc.Id, summary),
+      summary,
+      'Cloned Account',
+      RecordCloneChildRecordNamePicklist.valueOriginalName
+    );
+
+    Map<String, Contact> clonedByName = new Map<String, Contact>();
+    for (Contact c : [
+      SELECT LastName, ReportsToId
+      FROM Contact
+      WHERE AccountId = :clonedAccount.Id
+    ]) {
+      clonedByName.put(c.LastName, c);
+    }
+    Assert.areEqual(2, clonedByName.size());
+    Assert.areNotEqual(
+      boss.Id,
+      clonedByName.get('Report').ReportsToId,
+      'Cloned report must not point at the original boss'
+    );
+    Assert.areEqual(
+      clonedByName.get('Boss').Id,
+      clonedByName.get('Report').ReportsToId,
+      'Cloned report must point at the cloned boss'
+    );
+    Assert.areEqual(
+      outsider.Id,
+      clonedByName.get('Boss').ReportsToId,
+      'A lookup to a record outside the clone must stay as it was'
+    );
+    Assert.areEqual(
+      boss.Id,
+      [SELECT ReportsToId FROM Contact WHERE Id = :report.Id]
+      .ReportsToId,
+      'The original must not change'
+    );
+  }
+
+  @IsTest
+  private static void testCloneRecordsRemapsSiblingReferencesPerParent() {
+    // Two accounts in one multi-record clone. Each cloned report must point at the cloned boss of
+    // its own account, never at the other account's boss.
+    List<Account> accounts = new List<Account>{
+      new Account(Name = 'First'),
+      new Account(Name = 'Second')
+    };
+    insert accounts;
+    List<Contact> bosses = new List<Contact>();
+    for (Account a : accounts) {
+      bosses.add(new Contact(LastName = 'Boss ' + a.Name, AccountId = a.Id));
+    }
+    insert bosses;
+    List<Contact> reports = new List<Contact>();
+    for (Integer i = 0; i < accounts.size(); i++) {
+      reports.add(
+        new Contact(
+          LastName = 'Report ' + accounts[i].Name,
+          AccountId = accounts[i].Id,
+          ReportsToId = bosses[i].Id
+        )
+      );
+    }
+    insert reports;
+
+    sObjectSummary summary = sObjectSummary.getByRecordId(
+      accounts[0].Id,
+      'Contacts',
+      ''
+    );
+    List<sObject> originals = RecordCloneHandler.getOriginalRecords(
+      new List<Id>{ accounts[0].Id, accounts[1].Id },
+      summary
+    );
+    List<sObject> clonedAccounts = RecordCloneHandler.cloneRecords(
+      originals,
+      summary
+    );
+
+    Set<Id> clonedAccountIds = new Map<Id, sObject>(clonedAccounts).keySet();
+    Map<Id, Contact> contactsById = new Map<Id, Contact>(
+      [
+        SELECT LastName, AccountId, ReportsToId
+        FROM Contact
+        WHERE AccountId IN :clonedAccountIds
+      ]
+    );
+    Assert.areEqual(4, contactsById.size());
+    Integer checkedReports = 0;
+    for (Contact c : contactsById.values()) {
+      if (!c.LastName.startsWith('Report')) {
+        continue;
+      }
+      Contact boss = contactsById.get(c.ReportsToId);
+      Assert.isNotNull(boss, 'Cloned report must point at a cloned contact');
+      Assert.areEqual(
+        c.AccountId,
+        boss.AccountId,
+        'Boss must be in the same cloned account'
+      );
+      Assert.isTrue(boss.LastName.startsWith('Boss'));
+      checkedReports++;
+    }
+    Assert.areEqual(2, checkedReports);
+  }
+
+  @IsTest
   private static void testCloneRecords() {
     Account acc = new Account(Name = 'TestAccount');
     insert acc;

@@ -26,6 +26,9 @@ public with sharing class sObjectSummary {
   @AuraEnabled
   public Map<String, sObjectSummary> children;
 
+  // Fields the database requires a value for when a record is created. Not sent to the UI.
+  private Set<String> requiredFieldNames = new Set<String>();
+
   // for multiple records cloning
   @AuraEnabled
   public String parentRecordNameFormat;
@@ -210,6 +213,13 @@ public with sharing class sObjectSummary {
 
       if (dfr.getLocalName() != 'Id') {
         this.fields.add(new sFieldSummary(describe, dfr, excludedFieldNameSet));
+        if (
+          dfr.isCreateable() &&
+          !dfr.isNillable() &&
+          !dfr.isDefaultedOnCreate()
+        ) {
+          this.requiredFieldNames.add(dfr.getLocalName());
+        }
       }
 
       if (dfr.isNameField() && dfr.isUpdateable()) {
@@ -259,7 +269,7 @@ public with sharing class sObjectSummary {
       String settingChildRecordNameFormat = RecordCloneChildRecordNamePicklist.values.get(
         settings[0].ChildRecordNameType__c
       );
-      if (settingChildRecordNameFormat == null) {
+      if (settingChildRecordNameFormat != null) {
         childRecordNameFormat = settingChildRecordNameFormat;
       }
     }
@@ -345,9 +355,42 @@ public with sharing class sObjectSummary {
         sObjectSummary.parentRelationshipField = child.getField()
           .getDescribe()
           .getName();
+        sObjectSummary.markRequiredFieldsThatCannotBeCloned();
         children.put(child.getRelationshipName(), sObjectSummary);
       }
     }
     return children;
+  }
+
+  /**
+   * A child record cannot be inserted if the database requires a field the clone leaves out (for
+   * example a required unique field). Such a child is shown as not clonable, with the field names,
+   * instead of failing every clone. The lookup back to the parent and the record name are filled in
+   * by the clone, so they do not count.
+   */
+  private void markRequiredFieldsThatCannotBeCloned() {
+    List<String> blockers = new List<String>();
+    for (sFieldSummary field : this.fields) {
+      if (
+        field.isClonable ||
+        !this.requiredFieldNames.contains(field.apiName) ||
+        field.apiName == this.parentRelationshipField ||
+        (this.isNamable && field.apiName == this.nameField)
+      ) {
+        continue;
+      }
+      blockers.add(field.apiName);
+    }
+    if (blockers.isEmpty()) {
+      return;
+    }
+    this.isClonable = false;
+    String reason =
+      'REQUIRED_FIELD_NOT_CLONABLE(' +
+      String.join(blockers, ' ') +
+      ')';
+    this.errorMessage = String.isBlank(this.errorMessage)
+      ? reason
+      : this.errorMessage + ',' + reason;
   }
 }

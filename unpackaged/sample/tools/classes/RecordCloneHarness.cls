@@ -73,8 +73,11 @@ public with sharing class RecordCloneHarness {
     }
   }
 
+  @TestVisible
   private static List<String> mismatches = new List<String>();
+  @TestVisible
   private static Map<String, Integer> findingTotals = new Map<String, Integer>();
+  @TestVisible
   private static Integer matched = 0;
 
   /**
@@ -205,8 +208,8 @@ public with sharing class RecordCloneHarness {
         withAuditChildren,
         '',
         nameOriginal,
-        error,
-        'REQUIRED_FIELD_MISSING'
+        ok,
+        null
       ),
       new CaseDefinition(
         'withdrawn',
@@ -377,7 +380,49 @@ public with sharing class RecordCloneHarness {
     );
   }
 
+  /**
+   * A child that can never be inserted must say so up front instead of failing every clone. The
+   * audit entry has a required unique key that a clone has to leave out.
+   */
+  private static void checkConfigurationReportsUnclonableChild() {
+    List<Sample_Application__c> originals = [
+      SELECT Id
+      FROM Sample_Application__c
+      WHERE
+        Scenario__c = 'Application with audit trail (required unique child field)'
+      LIMIT 1
+    ];
+    if (originals.isEmpty()) {
+      record('auditChildReportedNotClonable', false, 'no sample application');
+      return;
+    }
+    sObjectSummary summary = sObjectSummary.getByRecordId(
+      originals[0].Id,
+      withAuditChildren,
+      ''
+    );
+    sObjectSummary audit = summary.children.get('Audit_Entries__r');
+    sObjectSummary requirement = summary.children.get(
+      'Requirement_Responses__r'
+    );
+    Boolean reported =
+      audit != null &&
+      !audit.isClonable &&
+      audit.errorMessage.contains('REQUIRED_FIELD_NOT_CLONABLE') &&
+      audit.errorMessage.contains('Entry_Key__c');
+    record(
+      'auditChildReportedNotClonable',
+      reported &&
+      requirement != null &&
+      requirement.isClonable,
+      'expected=not clonable(REQUIRED_FIELD_NOT_CLONABLE Entry_Key__c) actual=' +
+      (audit == null ? 'missing' : audit.isClonable + ' ' + audit.errorMessage)
+    );
+  }
+
   private static void runBulkCases() {
+    checkConfigurationReportsUnclonableChild();
+
     List<Id> passingIds = new List<Id>(
       new Map<Id, Sample_Application__c>(
           [
@@ -539,16 +584,24 @@ public with sharing class RecordCloneHarness {
       }
     }
 
-    // Collect the child relationships that were part of the clone
+    // Collect the child relationships that were part of the clone and are clonable. A relationship
+    // reported as not clonable is skipped on purpose, so it is not a count difference.
+    sObjectSummary cloneSummary = sObjectSummary.getByRecordId(
+      originalId,
+      childRelationships,
+      ''
+    );
     Map<String, Schema.ChildRelationship> relationships = new Map<String, Schema.ChildRelationship>();
     for (
       Schema.ChildRelationship relationship : parentDescribe.getChildRelationships()
     ) {
+      String relationshipName = relationship.getRelationshipName();
       if (
-        relationship.getRelationshipName() != null &&
-        included.contains(relationship.getRelationshipName())
+        relationshipName != null &&
+        included.contains(relationshipName) &&
+        cloneSummary.children.get(relationshipName).isClonable
       ) {
-        relationships.put(relationship.getRelationshipName(), relationship);
+        relationships.put(relationshipName, relationship);
       }
     }
     Set<Schema.SObjectType> siblingTypes = new Set<Schema.SObjectType>();

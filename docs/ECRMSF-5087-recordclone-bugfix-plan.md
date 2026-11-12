@@ -219,16 +219,44 @@ attention; that still needs the Enterprise team's list.
 
 ### Fix status
 
-| Fix                                                 | Status                                                                                                 |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1. Error propagation                                | Done (`983fb2a`). Message names the object, status code, reason and fields. A failed clone rolls back. |
-| 2. Exclude external IDs                             | Done. `IS_EXTERNAL_ID` added in `sObjectSummary`. Harness findings for it: 19 to 0.                    |
-| 3. Sibling reference remap                          | Not started. Detectable and fixable from the sample data.                                              |
-| 4. Config-time check for children that cannot clone | Not started.                                                                                           |
-| Child name format (inverted null check)             | Not started.                                                                                           |
+| Fix                                                 | Status                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Error propagation                                | Done (`983fb2a`). Message names the object, status code, reason and fields. A failed clone rolls back.                                                                                                                                                                                                            |
+| 2. Exclude external IDs                             | Done. `IS_EXTERNAL_ID` added in `sObjectSummary`. Harness findings for it: 19 to 0.                                                                                                                                                                                                                               |
+| 3. Sibling reference remap                          | Done. Children are inserted in dependency order and a lookup to another cloned child is pointed at the new record. Self-references and cycles are patched with one update after the inserts. Works on the single-record and Flow paths. Lookups to records outside the clone (shared definitions) are left alone. |
+| 4. Config-time check for children that cannot clone | Done. A child with a required field the clone must drop is shown as not clonable with `REQUIRED_FIELD_NOT_CLONABLE(Field)`, and the clone skips it instead of failing.                                                                                                                                            |
+| Child name format (inverted null check)             | Done. The Flow path now uses the format stored on the settings record.                                                                                                                                                                                                                                            |
 
-### Known side effect
+Every fix was checked by breaking it on purpose: the sample-data tests and the harness each fail with a clear message
+when the fix is removed. The same checks pass on a fresh scratch org built with `dev_org` alone.
 
-`RecordCloneHarness` is a dev-only class without a test. Where it is deployed, org-wide coverage drops
-from 88% to 46%, below the 75% that `run_tests` requires. No CI flow deploys it. Anyone running
-`cci task run run_tests --org dev` by hand sees the lower number.
+### Browser check (scratch org)
+
+The sample application record page (`Sample_Application_Record_Page`) shows the RecordClone component. Checked in a
+real browser:
+
+- A clean application clones, navigates to the new record, and shows the success toast. The clone has 2 requirement
+  responses, 2 question responses (each pointing at a requirement response under the **new** application), 1 award and
+  1 opportunity, and blank external IDs.
+- An application on a retired term shows the full reason in the error toast: `Clone failed. Sample Application - [FIELD_FILTER_VALIDATION_EXCEPTION] The term must be active. (Term__c)`. No partial clone was left behind.
+- The details panel lists the audit-entry child as not clonable (`REQUIRED_FIELD_NOT_CLONABLE(Entry_Key__c)`) and the
+  external ID field as excluded (`IS_EXTERNAL_ID`).
+
+Deploying the Apex classes alone is not enough for the toast: the component (`force-app/main/default/lwc`) must be
+deployed too, or users still see an empty "RecordClone Error" toast.
+
+### Coverage
+
+`RecordCloneHarnessTest` (unpackaged) covers the harness. Org-wide coverage is 88% with everything deployed.
+
+### Still needs the real org
+
+- Which fields on the real Banner objects to exclude (needs the Enterprise team's list). The mechanism is built; the
+  `ExcludedFieldNames__c` values are configuration.
+- Validation rules, required fields and lookup filters specific to the real Application, Opportunity, Requirement
+  Response, Question Response and Award objects. The sample objects have the same shape, not the same schema.
+- Child objects ignore `ExcludedFieldNames__c` (it applies to the parent only). Not changed; raise it if the real
+  children need field exclusions.
+- ESLint reports an existing `no-api-reassignments` error at `recordClone.js:76`. Not changed.
+- Code Analyzer reports the same High findings on `RecordCloneHandler` and `RecordCloneController` as on `HEAD`
+  (CRUD/FLS and dynamic SOQL). Not changed.

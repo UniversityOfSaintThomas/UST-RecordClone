@@ -12,6 +12,27 @@ public with sharing class RecordCloneHandler {
   public class RecordCloneException extends Exception {
   }
 
+  /**
+   * The cloned children of one relationship, waiting to be inserted. The original Ids are kept so a
+   * lookup from one cloned child to another can be pointed at the new record instead of the old one.
+   */
+  private class ChildBatch {
+    private sObjectSummary summary;
+    private List<sObject> rows = new List<sObject>();
+    private List<Id> originalIds = new List<Id>();
+    private List<String> siblingFields = new List<String>();
+  }
+
+  /**
+   * A lookup to a sibling that has no new Id yet, because the sibling is inserted later or in the
+   * same batch. It is patched with one update after every batch is in.
+   */
+  private class DeferredReference {
+    private sObject row;
+    private String fieldName;
+    private Id originalSiblingId;
+  }
+
   // single records
   public static sObject getOriginalRecord(
     Id recordId,
@@ -94,6 +115,7 @@ public with sharing class RecordCloneHandler {
     ) {
       // append to child records' name fields
       String todayStr = Datetime.now().format('yyyy/MM/dd HH:mm');
+      List<ChildBatch> batches = new List<ChildBatch>();
 
       // remove child record IDs, assign then cloned parent record Id to ref field
       for (String childRelName : sObjectSummary.children.keySet()) {
@@ -149,7 +171,10 @@ public with sharing class RecordCloneHandler {
           }
         }
 
+        ChildBatch batch = new ChildBatch();
+        batch.summary = childSummary;
         for (Integer i = 0; i < children.size(); i++) {
+          batch.originalIds.add(children[i].Id);
           children[i].put('Id', null);
           if (childSummary.isNamable) {
             String originalRecordName = (String) children[i]
@@ -172,17 +197,197 @@ public with sharing class RecordCloneHandler {
 
           children[i].put(childSummary.parentRelationshipField, cloned.Id);
         }
-        try {
-          insert children;
-        } catch (DmlException e) {
-          throw new RecordCloneException(
-            buildDmlMessage(childSummary.label, children, e)
-          );
-        }
+        batch.rows = children;
+        batches.add(batch);
       }
+      insertChildBatches(batches);
     }
 
     return cloned;
+  }
+
+  /**
+   * Inserts the cloned children of every relationship. A lookup from one cloned child to another
+   * (a sibling) is pointed at the new record, not the original. Batches go in dependency order so
+   * the sibling already exists; a self reference or a cycle is inserted pointing at the original
+   * and patched afterwards. A lookup to a record outside the clone set is left as it was.
+   *
+   * @param batches The cloned children, one batch per relationship, with their original Ids
+   */
+  private static void insertChildBatches(List<ChildBatch> batches) {
+    if (batches == null || batches.isEmpty()) {
+      return;
+    }
+
+    Set<Id> allOriginalIds = new Set<Id>();
+    Set<Schema.SObjectType> includedTypes = new Set<Schema.SObjectType>();
+    for (ChildBatch batch : batches) {
+      allOriginalIds.addAll(batch.originalIds);
+      includedTypes.add(batch.rows[0].getSObjectType());
+    }
+    for (ChildBatch batch : batches) {
+      batch.siblingFields = findSiblingFields(batch, includedTypes);
+    }
+
+    Map<Id, Id> newIdByOriginalId = new Map<Id, Id>();
+    Set<Schema.SObjectType> insertedTypes = new Set<Schema.SObjectType>();
+    List<DeferredReference> deferred = new List<DeferredReference>();
+
+    List<ChildBatch> pending = new List<ChildBatch>(batches);
+    while (!pending.isEmpty()) {
+      ChildBatch next = pickNextBatch(pending, insertedTypes);
+      pending.remove(pending.indexOf(next));
+
+      for (Integer i = 0; i < next.rows.size(); i++) {
+        for (String fieldName : next.siblingFields) {
+          Object value = next.rows[i].get(fieldName);
+          if (value == null || !allOriginalIds.contains((Id) value)) {
+            continue;
+          }
+          if (newIdByOriginalId.containsKey((Id) value)) {
+            next.rows[i].put(fieldName, newIdByOriginalId.get((Id) value));
+          } else {
+            DeferredReference reference = new DeferredReference();
+            reference.row = next.rows[i];
+            reference.fieldName = fieldName;
+            reference.originalSiblingId = (Id) value;
+            deferred.add(reference);
+          }
+        }
+      }
+
+      try {
+        insert next.rows;
+      } catch (DmlException e) {
+        throw new RecordCloneException(
+          buildDmlMessage(next.summary.label, next.rows, e)
+        );
+      }
+      for (Integer i = 0; i < next.rows.size(); i++) {
+        newIdByOriginalId.put(next.originalIds[i], next.rows[i].Id);
+      }
+      insertedTypes.add(next.rows[0].getSObjectType());
+    }
+
+    patchDeferredReferences(deferred, newIdByOriginalId);
+  }
+
+  /**
+   * Picks a batch whose siblings are all inserted already. If none is ready the remaining batches
+   * depend on each other, so the first is taken and its lookups are patched afterwards.
+   *
+   * @param pending Batches not inserted yet
+   * @param insertedTypes Object types that already have rows in the database
+   * @return The batch to insert next
+   */
+  private static ChildBatch pickNextBatch(
+    List<ChildBatch> pending,
+    Set<Schema.SObjectType> insertedTypes
+  ) {
+    for (ChildBatch candidate : pending) {
+      Boolean ready = true;
+      for (Schema.SObjectType dependency : dependencies(candidate)) {
+        if (!insertedTypes.contains(dependency)) {
+          ready = false;
+          break;
+        }
+      }
+      if (ready) {
+        return candidate;
+      }
+    }
+    return pending[0];
+  }
+
+  /**
+   * The other child types a batch points at through its sibling lookups. A lookup to its own type
+   * is not a dependency, because it can only be patched after the insert.
+   *
+   * @param batch The batch to inspect
+   * @return Object types that should be inserted before this batch
+   */
+  private static Set<Schema.SObjectType> dependencies(ChildBatch batch) {
+    Set<Schema.SObjectType> result = new Set<Schema.SObjectType>();
+    Schema.SObjectType ownType = batch.rows[0].getSObjectType();
+    Map<String, Schema.SObjectField> fieldMap = ownType.getDescribe()
+      .fields.getMap();
+    for (String fieldName : batch.siblingFields) {
+      for (
+        Schema.SObjectType target : fieldMap.get(fieldName)
+          .getDescribe()
+          .getReferenceTo()
+      ) {
+        if (target != ownType) {
+          result.add(target);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Finds the lookups on a child that can point at another cloned child: queried, clonable,
+   * and aimed at a type that is part of this clone. The lookup back to the parent is not one.
+   *
+   * @param batch The batch to inspect
+   * @param includedTypes Object types of all children in this clone
+   * @return API names of the sibling lookup fields
+   */
+  private static List<String> findSiblingFields(
+    ChildBatch batch,
+    Set<Schema.SObjectType> includedTypes
+  ) {
+    List<String> result = new List<String>();
+    Map<String, Schema.SObjectField> fieldMap = batch.rows[0]
+      .getSObjectType()
+      .getDescribe()
+      .fields.getMap();
+    for (String fieldName : batch.summary.filterClonableFields()) {
+      Schema.SObjectField field = fieldMap.get(fieldName);
+      if (
+        field == null ||
+        fieldName == batch.summary.parentRelationshipField ||
+        field.getDescribe().getType() != Schema.DisplayType.REFERENCE
+      ) {
+        continue;
+      }
+      for (Schema.SObjectType target : field.getDescribe().getReferenceTo()) {
+        if (includedTypes.contains(target)) {
+          result.add(fieldName);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
+  private static void patchDeferredReferences(
+    List<DeferredReference> deferred,
+    Map<Id, Id> newIdByOriginalId
+  ) {
+    if (deferred.isEmpty()) {
+      return;
+    }
+    Map<Id, sObject> patches = new Map<Id, sObject>();
+    for (DeferredReference reference : deferred) {
+      Id newSiblingId = newIdByOriginalId.get(reference.originalSiblingId);
+      if (newSiblingId == null) {
+        continue;
+      }
+      sObject patch = patches.get(reference.row.Id);
+      if (patch == null) {
+        patch = reference.row.getSObjectType().newSObject(reference.row.Id);
+        patches.put(reference.row.Id, patch);
+      }
+      patch.put(reference.fieldName, newSiblingId);
+    }
+    try {
+      update patches.values();
+    } catch (DmlException e) {
+      throw new RecordCloneException(
+        buildDmlMessage('Cloned record', patches.values(), e)
+      );
+    }
   }
 
   /**
@@ -310,7 +515,7 @@ public with sharing class RecordCloneHandler {
       sObjectSummary.children.keySet().size() > 0
     ) {
       // remove child record IDs, assign then cloned parent record Id to ref field
-      List<sObject> childrens = new List<sObject>();
+      List<ChildBatch> batches = new List<ChildBatch>();
       List<Id> ocrIds = new List<Id>();
       Boolean ocrIsDeletable = false;
       for (String childRelName : sObjectSummary.children.keySet()) {
@@ -320,6 +525,8 @@ public with sharing class RecordCloneHandler {
           continue;
         }
 
+        ChildBatch batch = new ChildBatch();
+        batch.summary = childSummary;
         for (sObject cloning : clonings) {
           sObject[] children;
           try {
@@ -343,6 +550,7 @@ public with sharing class RecordCloneHandler {
           }
 
           for (Integer i = 0; i < children.size(); i++) {
+            batch.originalIds.add(children[i].Id);
             children[i].put('Id', null);
             if (childSummary.isNamable) {
               String originalRecordName = (String) children[i]
@@ -364,7 +572,10 @@ public with sharing class RecordCloneHandler {
 
             children[i].put(childSummary.parentRelationshipField, cloning.Id);
           }
-          childrens.addAll(children);
+          batch.rows.addAll(children);
+        }
+        if (!batch.rows.isEmpty()) {
+          batches.add(batch);
         }
       }
 
@@ -382,13 +593,7 @@ public with sharing class RecordCloneHandler {
         }
       }
 
-      try {
-        insert childrens;
-      } catch (DmlException e) {
-        throw new RecordCloneException(
-          buildDmlMessage(sObjectSummary.label, childrens, e)
-        );
-      }
+      insertChildBatches(batches);
     }
 
     return clonings;

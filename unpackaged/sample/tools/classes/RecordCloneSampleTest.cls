@@ -92,6 +92,134 @@ private class RecordCloneSampleTest {
     );
   }
 
+  @IsTest
+  private static void siblingLookupsFollowTheCloneWhateverTheConfiguredOrder() {
+    Sample_Requirement__c requirement = new Sample_Requirement__c(Name = 'Req');
+    Sample_Question__c question = new Sample_Question__c(Name = 'Question');
+    insert requirement;
+    insert question;
+    Sample_Application__c original = new Sample_Application__c(
+      Name = 'Applicant'
+    );
+    insert original;
+    List<Sample_Requirement_Response__c> responses = new List<Sample_Requirement_Response__c>{
+      new Sample_Requirement_Response__c(
+        Name = 'First',
+        Application__c = original.Id,
+        Requirement__c = requirement.Id
+      ),
+      new Sample_Requirement_Response__c(
+        Name = 'Second',
+        Application__c = original.Id,
+        Requirement__c = requirement.Id
+      )
+    };
+    insert responses;
+    insert new List<Sample_Question_Response__c>{
+      new Sample_Question_Response__c(
+        Name = 'About first',
+        Application__c = original.Id,
+        Question__c = question.Id,
+        Requirement_Response__c = responses[0].Id
+      ),
+      new Sample_Question_Response__c(
+        Name = 'About second',
+        Application__c = original.Id,
+        Question__c = question.Id,
+        Requirement_Response__c = responses[1].Id
+      )
+    };
+
+    // Question responses are listed BEFORE the requirement responses they depend on
+    sObjectSummary summary = sObjectSummary.getByRecordId(
+      original.Id,
+      'Question_Responses__r,Requirement_Responses__r',
+      ''
+    );
+    sObject cloned = RecordCloneHandler.cloneRecord(
+      RecordCloneHandler.getOriginalRecord(original.Id, summary),
+      summary,
+      'Cloned Applicant',
+      RecordCloneChildRecordNamePicklist.valueOriginalName
+    );
+
+    List<Sample_Question_Response__c> clonedAnswers = [
+      SELECT
+        Name,
+        Question__c,
+        Requirement_Response__c,
+        Requirement_Response__r.Application__c,
+        Requirement_Response__r.Name
+      FROM Sample_Question_Response__c
+      WHERE Application__c = :cloned.Id
+      ORDER BY Name
+    ];
+    Assert.areEqual(2, clonedAnswers.size());
+    for (Sample_Question_Response__c answer : clonedAnswers) {
+      Assert.areEqual(
+        cloned.Id,
+        answer.Requirement_Response__r.Application__c,
+        'Must point at a cloned requirement response, not the original'
+      );
+      Assert.areEqual(
+        question.Id,
+        answer.Question__c,
+        'A shared lookup stays as it was'
+      );
+    }
+    Assert.areEqual('First', clonedAnswers[0].Requirement_Response__r.Name);
+    Assert.areEqual('Second', clonedAnswers[1].Requirement_Response__r.Name);
+  }
+
+  @IsTest
+  private static void childWithARequiredFieldTheCloneMustDropIsNotClonable() {
+    Sample_Application__c original = new Sample_Application__c(
+      Name = 'Applicant'
+    );
+    insert original;
+    insert new Sample_Audit_Entry__c(
+      Application__c = original.Id,
+      Entry_Key__c = 'KEY-1',
+      Reviewer_Note__c = 'Checked'
+    );
+
+    sObjectSummary summary = sObjectSummary.getByRecordId(
+      original.Id,
+      'Audit_Entries__r',
+      ''
+    );
+    sObjectSummary audit = summary.children.get('Audit_Entries__r');
+    Assert.isFalse(audit.isClonable);
+    Assert.isTrue(
+      audit.errorMessage.contains('REQUIRED_FIELD_NOT_CLONABLE(Entry_Key__c)'),
+      'Reason should name the field: ' + audit.errorMessage
+    );
+
+    // The clone goes ahead without that child, instead of failing
+    sObject cloned = RecordCloneHandler.cloneRecord(
+      RecordCloneHandler.getOriginalRecord(original.Id, summary),
+      summary,
+      'Cloned Applicant',
+      RecordCloneChildRecordNamePicklist.valueOriginalName
+    );
+    Assert.areEqual(
+      0,
+      [
+        SELECT COUNT()
+        FROM Sample_Audit_Entry__c
+        WHERE Application__c = :cloned.Id
+      ]
+    );
+    Assert.areEqual(
+      1,
+      [
+        SELECT COUNT()
+        FROM Sample_Audit_Entry__c
+        WHERE Application__c = :original.Id
+      ]
+    );
+  }
+
   private static sObjectSummary.sFieldSummary field(
     sObjectSummary summary,
     String apiName

@@ -182,6 +182,35 @@ private class sObjectSummaryTest {
     }
   }
 
+  @IsTest
+  private static void testChildNameFormatComesFromTheSettingsRecord() {
+    // The packaged SampleOpportunityCloneSettings record asks for "Cloned - name - date" on children.
+    Account acc = new Account(Name = 'Format Account');
+    insert acc;
+    Opportunity opp = new Opportunity(
+      Name = 'Format Opp',
+      AccountId = acc.Id,
+      StageName = 'First Step',
+      CloseDate = Date.today()
+    );
+    insert opp;
+
+    sObjectSummary withSettings = sObjectSummary.getByRecordId(opp.Id);
+    Assert.areEqual(
+      RecordCloneChildRecordNamePicklist.valueWithClonedAndDate,
+      withSettings.childRecordNameFormat,
+      'The format stored on the settings record must be used'
+    );
+
+    Case noSettings = new Case(Subject = 'No settings for Case');
+    insert noSettings;
+    Assert.areEqual(
+      RecordCloneChildRecordNamePicklist.valueOriginalName,
+      sObjectSummary.getByRecordId(noSettings.Id).childRecordNameFormat,
+      'Without a settings record the original name is kept'
+    );
+  }
+
   private static List<String> stringToList(String commaSeparatedString) {
     List<String> splitted = commaSeparatedString.split(',');
     for (Integer i = 0; i < splitted.size(); i++) {
