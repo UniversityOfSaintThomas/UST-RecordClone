@@ -9,7 +9,7 @@ RecordClone clones a Salesforce record and selected child records. This is the U
 SalesforceLabs RecordClone, used for Jira ECRMSF-5087 (deferral process: clone an Application and its related
 records to a new term).
 
-- Package directory: `force-app` (the only packaged path). No namespace. API version 67.0.
+- Package directory: `force-app` (the only packaged path). No namespace. API version 68.0.
 - Build and deploy: CumulusCI (`cci`) and Salesforce CLI (`sf`). Scratch orgs only.
 - The user commits. Do not run `git commit` or `git push`.
 
@@ -52,6 +52,29 @@ Behaviours to keep:
 - `ExcludedFieldNames__c` applies to the parent object only, not to children.
 - Custom relationship names need `__r`: `Requirement_Responses__r`, `Opportunities__r`.
 
+### Access modes (API 68.0)
+
+Every class is `with sharing` and every query or DML names its access mode, so the code does not depend on the API
+version default (user mode from 67.0, system mode before).
+
+- Queries use `Database.queryWithBinds(..., AccessLevel.USER_MODE)` with bind variables. DML uses
+  `Database.insert/update/delete(..., AccessLevel.USER_MODE)`. The `insert as user` form is not used because
+  `prettier-plugin-apex` 1.x cannot parse it.
+- The one `SYSTEM_MODE` read is the `RecordCloneSettings__mdt` query in `sObjectSummary.getByRecordId`. It is admin-owned
+  configuration, and a user without access to that type gets a `QueryException` in user mode (measured).
+- A user mode DML the user may not make throws `System.SecurityException` (no access to the object) or
+  `System.TypeException` "DML operation INSERT not allowed" (can read, cannot create). Neither is a `DmlException`.
+  `RecordCloneHandler.insertRows` converts both into a `RecordCloneException` that names the object.
+- A queried record carries its child relationship lists, and user mode DML rejects them with
+  `INVALID_FIELD_FOR_INSERT_UPDATE: bad field names ... Contacts`. The handler therefore inserts a clean copy built by
+  `copyClonableFields` (only the clonable fields the original actually carries) and reads the children from the
+  original. Do not insert the queried record itself.
+- `getNameFieldValue` receives an object and field name from the browser. Both are checked against the schema of the
+  record's own object before they reach the query.
+- The describe checks in `sObjectSummary` leave a user with no create access with no clonable fields, so `execClone`
+  returns `null` for them (the UI shows its generic "did not return a new record" message). The DML refusal path is
+  reached only when a cached summary is older than the user's permissions.
+
 ## Commands
 
 The `dev` scratch org's `sf` alias is `UST-RecordClone__dev` (confirm with `cci org info dev`).
@@ -93,7 +116,12 @@ original, wrong child counts). The data is never changed.
   tab; the message is in `error[0].message`.
 - `cci` output contains ANSI colour codes. Strip them (`sed 's/\x1b\[[0-9;]*m//g'`) before parsing.
 - Debug lines from `sf apex run` appear as `USER_DEBUG|[n]|DEBUG|<text>`; filter on your own prefix.
-- A mutation test must redeploy after restoring the file, or the org keeps the broken code.
+- A mutation test must redeploy after restoring the file, or the org keeps the broken code. `ai-logs/mutate.py` does
+  this and asserts the mutation applied (a mutation that silently did not apply looks like a passing test).
+- `cci task run deploy --path` needs a folder, not a single file. Use `sf project deploy start --source-dir <file>` for
+  one class.
+- Apex is case-insensitive: a parameter named `accountAccess` shadows an enum named `AccountAccess`.
+- `cci org info` prints the scratch org password. Never copy that output into a file or a message.
 - The sample permission set `Sample_Data_Access` is required for field access; without it describe results look empty.
 - `get_file_problems` (IDE MCP) cannot resolve Apex built-ins in this project, so it reports noise on every class.
 - chrome-devtools-mcp rejects file paths that go through the `/var/home` symlink for screenshots. Inspect with
@@ -113,8 +141,10 @@ original, wrong child counts). The data is never changed.
 ## Known issues (not fixed)
 
 - ESLint reports `@lwc/lwc/no-api-reassignments` at `recordClone.js:76` (present before this work).
-- Code Analyzer reports CRUD/FLS and dynamic SOQL (`ApexCRUDViolation`, `ApexSOQLInjection`) on the handler and
-  controller; the counts match `HEAD`.
+- Code Analyzer has no Critical or High findings. The Moderate, Low and Info findings (complexity, ApexDoc, naming) are
+  unchanged apart from the new test class, and were not part of the work.
 - Children ignore `ExcludedFieldNames__c`.
+- On the multi-record path the Opportunity contact-role cleanup checks `isDeletable` of the parent (Opportunity), not of
+  the contact role. The single-record path checks the child. Not changed.
 - The Banner field list from the Enterprise team (TDX ticket linked in the plan doc) is still needed to configure
   which real fields to exclude.

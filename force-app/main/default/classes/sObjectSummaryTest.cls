@@ -9,15 +9,19 @@ private class sObjectSummaryTest {
   @IsTest
   private static void simpleConstructor() {
     sObjectSummary accObj = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     System.assertEquals(accObj.apiName, 'Account');
 
-    sObjectSummary caseObj = new sObjectSummary(Case.sObjectType.getDescribe());
+    sObjectSummary caseObj = new sObjectSummary(
+      Case.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
+    );
     System.assertEquals(caseObj.apiName, 'Case');
 
     sObjectSummary oliObj = new sObjectSummary(
-      OpportunityLineItem.sObjectType.getDescribe()
+      OpportunityLineItem.sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      )
     );
     System.assertEquals(oliObj.apiName, 'OpportunityLineItem');
   }
@@ -26,7 +30,7 @@ private class sObjectSummaryTest {
   private static void withExcludedField() {
     String accExcluded = 'Phone';
     sObjectSummary accObj = new sObjectSummary(
-      Account.sObjectType.getDescribe(),
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED),
       accExcluded
     );
     for (sObjectSummary.sFieldSummary fs : accObj.fields) {
@@ -37,7 +41,7 @@ private class sObjectSummaryTest {
 
     String caseExcluded = 'BusinessHoursId, Description';
     sObjectSummary caseObj = new sObjectSummary(
-      Case.sObjectType.getDescribe(),
+      Case.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED),
       caseExcluded
     );
     for (sObjectSummary.sFieldSummary fs : caseObj.fields) {
@@ -48,7 +52,9 @@ private class sObjectSummaryTest {
 
     String oliExcluded = 'Discount, Description';
     sObjectSummary oliObj = new sObjectSummary(
-      OpportunityLineItem.sObjectType.getDescribe(),
+      OpportunityLineItem.sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      ),
       oliExcluded
     );
     for (sObjectSummary.sFieldSummary fs : oliObj.fields) {
@@ -60,38 +66,44 @@ private class sObjectSummaryTest {
 
   @IsTest
   private static void notSupportedObj() {
-    sObjectSummary taskObj = new sObjectSummary(Task.sObjectType.getDescribe());
+    sObjectSummary taskObj = new sObjectSummary(
+      Task.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
+    );
     System.assertEquals(taskObj.isClonable, false);
 
     sObjectSummary eventObj = new sObjectSummary(
-      Event.sObjectType.getDescribe()
+      Event.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     System.assertEquals(eventObj.isClonable, false);
 
     sObjectSummary attachmentObj = new sObjectSummary(
-      Attachment.sObjectType.getDescribe()
+      Attachment.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     System.assertEquals(attachmentObj.isClonable, false);
 
     sObjectSummary docObj = new sObjectSummary(
-      Document.sObjectType.getDescribe()
+      Document.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     System.assertEquals(docObj.isClonable, false);
 
     sObjectSummary cdlObj = new sObjectSummary(
-      ContentDocumentLink.sObjectType.getDescribe()
+      ContentDocumentLink.sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      )
     );
     System.assertEquals(cdlObj.isClonable, false);
 
     sObjectSummary cdObj = new sObjectSummary(
-      ContentDocument.sObjectType.getDescribe()
+      ContentDocument.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     System.assertEquals(cdObj.isClonable, false);
   }
 
   @IsTest
   private static void exceptionalFields() {
-    sObjectSummary caseObj = new sObjectSummary(Case.sObjectType.getDescribe());
+    sObjectSummary caseObj = new sObjectSummary(
+      Case.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
+    );
     for (sObjectSummary.sFieldSummary fs : caseObj.fields) {
       if (fs.apiName == 'ClosedDate') {
         System.assertEquals(fs.isClonable, false);
@@ -99,7 +111,9 @@ private class sObjectSummaryTest {
     }
 
     sObjectSummary oliObj = new sObjectSummary(
-      OpportunityLineItem.sObjectType.getDescribe()
+      OpportunityLineItem.sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      )
     );
     for (sObjectSummary.sFieldSummary fs : oliObj.fields) {
       if (fs.apiName == 'TotalPrice') {
@@ -112,7 +126,7 @@ private class sObjectSummaryTest {
   private static void testFilterClonableFields() {
     String accExcluded = 'Phone, Email';
     sObjectSummary accObj = new sObjectSummary(
-      Account.sObjectType.getDescribe(),
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED),
       accExcluded
     );
 

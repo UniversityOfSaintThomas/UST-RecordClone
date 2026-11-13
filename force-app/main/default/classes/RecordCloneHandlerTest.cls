@@ -14,7 +14,7 @@ private class RecordCloneHandlerTest {
     insert con;
 
     sObjectSummary accSummary = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
 
     sObject withNullRecordId = RecordCloneHandler.getOriginalRecord(
@@ -54,7 +54,7 @@ private class RecordCloneHandlerTest {
     List<Id> conIds = new List<Id>(new Map<Id, Contact>(cons).keySet());
 
     sObjectSummary accSummary = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
 
     List<sObject> withNullRecordIds = RecordCloneHandler.getOriginalRecords(
@@ -112,7 +112,7 @@ private class RecordCloneHandlerTest {
     insert ocr;
 
     sObjectSummary accSummary1 = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
 
     sObjectSummary oppSummary1 = sObjectSummary.getByRecordId(
@@ -169,7 +169,7 @@ private class RecordCloneHandlerTest {
     Account acc = new Account(Name = 'TestAccount');
     insert acc;
     sObjectSummary accSummary = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
 
     String thrownMessage;
@@ -383,7 +383,7 @@ private class RecordCloneHandlerTest {
     insert ocr;
 
     sObjectSummary accSummary1 = new sObjectSummary(
-      Account.sObjectType.getDescribe()
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
 
     List<sObject> originals = new List<SObject>();

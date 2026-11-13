@@ -7,7 +7,9 @@ private class RecordCloneSampleTest {
   @IsTest
   private static void externalIdFieldsAreNotClonable() {
     sObjectSummary application = new sObjectSummary(
-      Sample_Application__c.sObjectType.getDescribe()
+      Sample_Application__c.sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      )
     );
     sObjectSummary.sFieldSummary externalId = field(
       application,
@@ -24,7 +26,7 @@ private class RecordCloneSampleTest {
     );
 
     sObjectSummary opportunity = new sObjectSummary(
-      Opportunity.sObjectType.getDescribe()
+      Opportunity.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
     );
     Assert.isFalse(
       field(opportunity, 'Sample_External_Id__c').isClonable,

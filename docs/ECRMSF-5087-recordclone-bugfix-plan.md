@@ -249,6 +249,58 @@ deployed too, or users still see an empty "RecordClone Error" toast.
 
 `RecordCloneHarnessTest` (unpackaged) covers the harness. Org-wide coverage is 88% with everything deployed.
 
+### API 68.0 and Code Analyzer (updated 2026-11-13)
+
+Everything is on API 68.0: the 8 classes (were 48.0), 3 LWC bundles (were 52.0), the 3 sample tools (were 67.0),
+`sfdx-project.json` (was 52.0) and `cumulusci.yml` (was 67.0).
+
+**What changed in the platform.** User mode as the default for Apex database operations, `with sharing` as the default,
+and the removal of `WITH SECURITY_ENFORCED` all arrived in API 67.0, not 68.0. The classes sat at 48.0, so moving them
+crossed all of it at once. `USER_MODE` and `SYSTEM_MODE` themselves are older than either version.
+
+**What the version bump alone did.** It failed 12 of 33 tests with `INVALID_FIELD_FOR_INSERT_UPDATE: bad field names on insert/update call: Contacts`. A queried record carries its child relationship lists, and user mode DML rejects them.
+At 48.0 they were ignored. The handler now inserts a clean copy of each parent built from the clonable fields
+(`copyClonableFields`) and reads the children from the original.
+
+**Explicit modes.** Every query and DML names its mode and uses bind variables:
+
+- Queries and DML run in `USER_MODE`. The running user's sharing, object permissions and field-level security apply.
+- The `RecordCloneSettings__mdt` read is `WITH SYSTEM_MODE`. It is admin-owned configuration. In user mode a user
+  without access to that type gets a `QueryException`, which would break cloning for every ordinary user.
+- A refused user mode DML throws `SecurityException` (cannot see the object) or `TypeException` "DML operation INSERT
+  not allowed" (can read, cannot create), not `DmlException`. Both are caught and reported with the object name.
+- `getNameFieldValue` took an object and field name from the browser and put them straight into the SOQL string. Both
+  are now checked against the record's own schema first.
+- On the Flow path, a user who cannot read the records got a bare `NullPointerException`. They now get "Clone failed.
+  The records could not be read."
+
+**Code Analyzer.** Critical 0, High 57 to 0. The 57 were: 23 `EagerlyLoadedDescribeSObjectResult` (tests, harness),
+15 `ApexCRUDViolation`, 11 `AvoidOldSalesforceApiVersions`, 6 `ApexSOQLInjection`, 2 `EmptyCatchBlock`. Moderate stayed at
+87, Low 92 to 93, Info 9 to 10. The new ones are naming rules in `RecordCloneAccessTest` (camelCase constants, per
+project convention). Complexity warnings on the handler were not addressed.
+
+**Tests.** 33 to 43 (all pass, 88% coverage). `RecordCloneAccessTest` runs real restricted users (Minimum Access
+profile plus permission sets) and checks: a read-only user gets no clone and no copy; a stale summary meets a refused
+insert and reports it by object name on both paths; a user without `Phone` access clones without the phone; the
+settings are readable by a user with no access to the type; a user with no access gets nothing back from either query
+even with an administrator's summary; the name lookup rejects smuggled SOQL. In `RecordCloneTest` the assertions that read
+child lists off the returned record now count the real child rows under the new parent, which is a stronger check.
+
+**Checked by breaking it.** Nine mutations, each caught by a named test: single-record and multi-record queries in
+system mode, insert in system mode, no `TypeException` catch, object-name check removed, settings read in user mode,
+parent inserted with its child lists, Flow null guard removed, all fields copied whether populated or not. Script:
+`ai-logs/mutate.py`, which restores the file byte for byte and redeploys.
+
+**Browser check (scratch org, API 68.0).** As admin: a clean application cloned and navigated to the new record with 4
+requirement responses, 3 question responses all pointing at the clone's requirement responses, 1 award, blank external
+ID; an application on a retired term showed the full reason in the toast and left nothing behind. As a Standard User
+with no access to the settings type: the component loaded the same summary and the clone worked. The temporary clones,
+permission set and user were removed (the user is deactivated; users cannot be deleted). The harness gate
+(`check_clone_harness`) passes.
+
+**Not verified.** A fresh scratch org built with `dev_org` on the new versions. The existing dev org was updated in
+place, so deploy order on a new build is untested.
+
 ### Still needs the real org
 
 - Which fields on the real Banner objects to exclude (needs the Enterprise team's list). The mechanism is built; the
@@ -258,5 +310,5 @@ deployed too, or users still see an empty "RecordClone Error" toast.
 - Child objects ignore `ExcludedFieldNames__c` (it applies to the parent only). Not changed; raise it if the real
   children need field exclusions.
 - ESLint reports an existing `no-api-reassignments` error at `recordClone.js:76`. Not changed.
-- Code Analyzer reports the same High findings on `RecordCloneHandler` and `RecordCloneController` as on `HEAD`
-  (CRUD/FLS and dynamic SOQL). Not changed.
+- Code Analyzer has no Critical or High findings (see the API 68.0 section above). Moderate, Low and Info findings
+  (complexity, ApexDoc, naming) remain and were not part of the work.

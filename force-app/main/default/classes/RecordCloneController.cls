@@ -26,18 +26,37 @@ global with sharing class RecordCloneController {
     String objectName,
     String nameField
   ) {
+    if (recordId == null) {
+      return null;
+    }
     try {
-      // handle error on frontend.
-      sObject sobj = Database.query(
+      // objectName and nameField arrive from the browser, so they are never placed in the query
+      // as given. Both must match the schema of the record's own object, and the query uses the
+      // names from that schema. A mismatch is the same "no value" answer the page already handles.
+      Schema.DescribeSObjectResult describe = recordId.getSObjectType()
+        .getDescribe(SObjectDescribeOptions.DEFERRED);
+      if (!describe.getName().equalsIgnoreCase(objectName)) {
+        return null;
+      }
+      Schema.SObjectField field = describe.fields.getMap().get(nameField);
+      if (field == null) {
+        return null;
+      }
+      String query =
         'SELECT ' +
-        nameField +
+        field.getDescribe().getName() +
         ' FROM ' +
-        objectName +
-        ' WHERE Id = \'' +
-        recordId +
-        '\''
+        describe.getName() +
+        ' WHERE Id = :recordId';
+      List<sObject> found = Database.queryWithBinds(
+        query,
+        new Map<String, Object>{ 'recordId' => recordId },
+        AccessLevel.USER_MODE
       );
-      return (String) sobj.get(nameField);
+      if (found.isEmpty()) {
+        return null;
+      }
+      return (String) found[0].get(field.getDescribe().getName());
     } catch (System.QueryException dmle) {
       return null;
     } catch (System.SObjectException sobje) {
@@ -140,6 +159,12 @@ global with sharing class RecordCloneController {
         rids,
         sObjSummary
       );
+      if (originalRecords == null) {
+        // The query runs in user mode. Without access to the object or its fields it finds nothing.
+        throw new RecordCloneHandler.RecordCloneException(
+          'Clone failed. The records could not be read. Check that you have access to the object and its fields.'
+        );
+      }
 
       // exec clone
       Map<Id, sObject> clonedRecords = new Map<Id, sObject>(

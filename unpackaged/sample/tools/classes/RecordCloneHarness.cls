@@ -283,6 +283,7 @@ public with sharing class RecordCloneHarness {
       SELECT Id, Name
       FROM Sample_Application__c
       WHERE Scenario__c = :scenarioName
+      WITH USER_MODE
       LIMIT 1
     ];
     if (originals.isEmpty()) {
@@ -390,6 +391,7 @@ public with sharing class RecordCloneHarness {
       FROM Sample_Application__c
       WHERE
         Scenario__c = 'Application with audit trail (required unique child field)'
+      WITH USER_MODE
       LIMIT 1
     ];
     if (originals.isEmpty()) {
@@ -429,6 +431,7 @@ public with sharing class RecordCloneHarness {
             SELECT Id
             FROM Sample_Application__c
             WHERE Expected_Outcome__c = 'PASS'
+            WITH USER_MODE
           ]
         )
         .keySet()
@@ -437,6 +440,7 @@ public with sharing class RecordCloneHarness {
       SELECT COUNT()
       FROM Sample_Requirement_Response__c
       WHERE Application__c IN :passingIds
+      WITH USER_MODE
     ];
 
     // Multi-record path with the custom metadata record for Sample_Application__c. It excludes Status__c.
@@ -450,16 +454,19 @@ public with sharing class RecordCloneHarness {
         SELECT COUNT()
         FROM Sample_Requirement_Response__c
         WHERE Application__c IN :clonedIds
+        WITH USER_MODE
       ];
       Integer prefixed = [
         SELECT COUNT()
         FROM Sample_Requirement_Response__c
         WHERE Application__c IN :clonedIds AND Name LIKE 'Cloned - %'
+        WITH USER_MODE
       ];
       Integer duplicateExternalIds = [
           SELECT External_Id__c
           FROM Sample_Application__c
           WHERE External_Id__c != NULL
+          WITH USER_MODE
           GROUP BY External_Id__c
           HAVING COUNT(Id) > 1
         ]
@@ -510,6 +517,7 @@ public with sharing class RecordCloneHarness {
       SELECT Id
       FROM Sample_Application__c
       WHERE Scenario__c = 'Application on a retired term (armed after load)'
+      WITH USER_MODE
       LIMIT 1
     ];
     if (!retired.isEmpty()) {
@@ -558,7 +566,9 @@ public with sharing class RecordCloneHarness {
     );
 
     // Parent external IDs
-    Schema.DescribeSObjectResult parentDescribe = Sample_Application__c.sObjectType.getDescribe();
+    Schema.DescribeSObjectResult parentDescribe = Sample_Application__c.sObjectType.getDescribe(
+      SObjectDescribeOptions.DEFERRED
+    );
     List<String> parentExternalIds = externalIdFields(parentDescribe);
     if (!parentExternalIds.isEmpty()) {
       String parentQuery =
@@ -566,7 +576,14 @@ public with sharing class RecordCloneHarness {
         String.join(parentExternalIds, ',') +
         ' FROM Sample_Application__c WHERE Id = :originalId OR Id = :clonedId';
       Map<Id, sObject> parents = new Map<Id, sObject>(
-        Database.query(parentQuery)
+        Database.queryWithBinds(
+          parentQuery,
+          new Map<String, Object>{
+            'originalId' => originalId,
+            'clonedId' => clonedId
+          },
+          AccessLevel.USER_MODE
+        )
       );
       for (String field : parentExternalIds) {
         Object originalValue = parents.get(originalId).get(field);
@@ -632,7 +649,15 @@ public with sharing class RecordCloneHarness {
         ' IN (:originalId, :clonedId)';
       List<sObject> originalSide = new List<sObject>();
       List<sObject> clonedSide = new List<sObject>();
-      for (sObject row : Database.query(baseQuery)) {
+      List<sObject> childRows = Database.queryWithBinds(
+        baseQuery,
+        new Map<String, Object>{
+          'originalId' => originalId,
+          'clonedId' => clonedId
+        },
+        AccessLevel.USER_MODE
+      );
+      for (sObject row : childRows) {
         if ((Id) row.get(parentField) == originalId) {
           originalSide.add(row);
         } else {

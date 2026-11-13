@@ -43,17 +43,22 @@ public with sharing class RecordCloneHandler {
     }
 
     try {
-      // Build query string
+      // The object and field names come from describe results, never from user input.
+      // The record Id is a bind variable. USER_MODE applies the running user's sharing,
+      // object permissions and field-level security to the query.
       String q =
         'SELECT Id, ' +
         String.join(sObjSummary.filterClonableFields(), ',') +
         buildChildrenSelectQuery(sObjSummary) +
         ' FROM ' +
         sObjSummary.apiName +
-        ' WHERE Id = \'' +
-        recordId +
-        '\'';
-      return Database.query(q);
+        ' WHERE Id = :recordId';
+      List<sObject> found = Database.queryWithBinds(
+        q,
+        new Map<String, Object>{ 'recordId' => recordId },
+        AccessLevel.USER_MODE
+      );
+      return found.isEmpty() ? null : found[0];
     } catch (System.QueryException e) {
       return null;
     }
@@ -69,30 +74,33 @@ public with sharing class RecordCloneHandler {
     }
 
     try {
-      // Build query string
+      // See getOriginalRecord: names come from describe results, the Ids are a bind variable.
       String q =
         'SELECT Id, ' +
         String.join(sObjSummary.filterClonableFields(), ',') +
         buildChildrenSelectQuery(sObjSummary) +
         ' FROM ' +
         sObjSummary.apiName +
-        ' WHERE Id IN (\'' +
-        String.join(recordIds, '\',\'') +
-        '\' )';
-      return Database.query(q);
+        ' WHERE Id IN :recordIds';
+      return Database.queryWithBinds(
+        q,
+        new Map<String, Object>{ 'recordIds' => recordIds },
+        AccessLevel.USER_MODE
+      );
     } catch (System.QueryException e) {
       return null;
     }
   }
 
   public static sObject cloneRecord(
-    sObject cloned,
+    sObject original,
     sObjectSummary sObjectSummary,
     String newRecordName,
     String childRecordNameType
   ) {
-    // remove original record ID, then insert.
-    cloned.Id = null;
+    // Insert a clean copy that holds only the clonable fields. The queried original also carries its
+    // child relationship lists, and user mode DML rejects those as fields that cannot be written.
+    sObject cloned = copyClonableFields(original, sObjectSummary);
 
     // update the record name field to user specified
     if (sObjectSummary.isNamable) {
@@ -100,13 +108,7 @@ public with sharing class RecordCloneHandler {
     }
 
     // insert a parent object record
-    try {
-      insert cloned;
-    } catch (DmlException e) {
-      throw new RecordCloneException(
-        buildDmlMessage(sObjectSummary.label, new List<sObject>{ cloned }, e)
-      );
-    }
+    insertRows(new List<sObject>{ cloned }, sObjectSummary.label);
 
     // cloning child records
     if (
@@ -133,11 +135,11 @@ public with sharing class RecordCloneHandler {
             // https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_loops_for_SOQL.htm
             // There are weird cases.
             // https://developer.salesforce.com/forums/?id=906F0000000AtTyIAK
-            children = cloned.getSObjects(childRelName);
+            children = original.getSObjects(childRelName);
           } catch (System.QueryException qe) {
             System.debug('QueryException. Now try using for loop.');
             children = new List<sObject>();
-            for (sObject child : cloned.getSObjects(childRelName)) {
+            for (sObject child : original.getSObjects(childRelName)) {
               children.add(child);
             }
           }
@@ -153,22 +155,10 @@ public with sharing class RecordCloneHandler {
         // Delete the created record as of now.
         if (
           sObjectSummary.apiName == 'Opportunity' &&
-          childRelName == 'OpportunityContactRoles'
+          childRelName == 'OpportunityContactRoles' &&
+          childSummary.isDeletable
         ) {
-          OpportunityContactRole[] ocrs = [
-            SELECT Id
-            FROM OpportunityContactRole
-            WHERE OpportunityId = :cloned.Id
-          ];
-
-          if (ocrs.size() > 0 && childSummary.isDeletable) {
-            try {
-              delete ocrs;
-            } catch (DMLException e) {
-              // if failed to delete auto-generated OpportunityContactRole,
-              // leave it.
-            }
-          }
+          deleteAutoCreatedContactRoles(new List<Id>{ cloned.Id });
         }
 
         ChildBatch batch = new ChildBatch();
@@ -256,13 +246,7 @@ public with sharing class RecordCloneHandler {
         }
       }
 
-      try {
-        insert next.rows;
-      } catch (DmlException e) {
-        throw new RecordCloneException(
-          buildDmlMessage(next.summary.label, next.rows, e)
-        );
-      }
+      insertRows(next.rows, next.summary.label);
       for (Integer i = 0; i < next.rows.size(); i++) {
         newIdByOriginalId.put(next.originalIds[i], next.rows[i].Id);
       }
@@ -382,11 +366,108 @@ public with sharing class RecordCloneHandler {
       patch.put(reference.fieldName, newSiblingId);
     }
     try {
-      update patches.values();
+      Database.update(patches.values(), AccessLevel.USER_MODE);
     } catch (DmlException e) {
       throw new RecordCloneException(
         buildDmlMessage('Cloned record', patches.values(), e)
       );
+    } catch (System.SecurityException e) {
+      throw new RecordCloneException(
+        buildNotPermittedMessage('Cloned record', e)
+      );
+    } catch (System.TypeException e) {
+      throw new RecordCloneException(
+        buildNotPermittedMessage('Cloned record', e)
+      );
+    }
+  }
+
+  /**
+   * Inserts records in user mode, so the running user's object permissions and field-level
+   * security apply. A failure is reported as a RecordCloneException that names the object.
+   *
+   * @param rows The records to insert
+   * @param label Label of the object, used when the failing row cannot be identified
+   */
+  private static void insertRows(List<sObject> rows, String label) {
+    try {
+      Database.insert(rows, AccessLevel.USER_MODE);
+    } catch (DmlException e) {
+      throw new RecordCloneException(buildDmlMessage(label, rows, e));
+    } catch (System.SecurityException e) {
+      throw new RecordCloneException(buildNotPermittedMessage(label, e));
+    } catch (System.TypeException e) {
+      // User mode raises a TypeException, "DML operation INSERT not allowed", when the user can
+      // read the object but not create it. A SecurityException is raised when they cannot see it.
+      throw new RecordCloneException(buildNotPermittedMessage(label, e));
+    }
+  }
+
+  /**
+   * Message for a user mode DML call the running user is not allowed to make. Salesforce raises a
+   * SecurityException or a TypeException for this, not a DmlException, so it carries no per-row
+   * detail.
+   *
+   * @param label Label of the object the user cannot write
+   * @param refusal The exception thrown by the user mode DML
+   * @return Message naming the object and the reason Salesforce gave
+   */
+  private static String buildNotPermittedMessage(
+    String label,
+    Exception refusal
+  ) {
+    return 'Clone failed. ' + label + ' - ' + refusal.getMessage();
+  }
+
+  /**
+   * Builds the record to insert: a new record of the same type holding the clonable fields that
+   * the original actually carries. A field that was never queried or set is left out, so the
+   * platform fills its default (for example the owner). Child relationship lists on the original
+   * are not copied.
+   *
+   * @param original The queried record to clone
+   * @param summary Describes which fields can be cloned
+   * @return A new, unsaved record with no Id
+   */
+  private static sObject copyClonableFields(
+    sObject original,
+    sObjectSummary summary
+  ) {
+    Set<String> populatedNames = new Set<String>();
+    for (String populatedName : original.getPopulatedFieldsAsMap().keySet()) {
+      populatedNames.add(populatedName.toLowerCase());
+    }
+    sObject copy = original.getSObjectType().newSObject();
+    for (String fieldName : summary.filterClonableFields()) {
+      if (populatedNames.contains(fieldName.toLowerCase())) {
+        copy.put(fieldName, original.get(fieldName));
+      }
+    }
+    return copy;
+  }
+
+  /**
+   * Inserting an Opportunity creates an OpportunityContactRole of its own, which would duplicate
+   * the role being cloned. Deletes the ones the system created. A role that cannot be deleted
+   * is left in place.
+   *
+   * @param opportunityIds The Ids of the new Opportunity records
+   */
+  private static void deleteAutoCreatedContactRoles(List<Id> opportunityIds) {
+    List<OpportunityContactRole> roles = [
+      SELECT Id
+      FROM OpportunityContactRole
+      WHERE OpportunityId IN :opportunityIds
+      WITH USER_MODE
+    ];
+    try {
+      Database.delete(roles, AccessLevel.USER_MODE);
+    } catch (DmlException ignored) {
+      // Leaving the auto-generated role is harmless, so the clone carries on.
+    } catch (System.SecurityException ignored) {
+      // The user may not delete these roles. Same outcome: leave them.
+    } catch (System.TypeException ignored) {
+      // Raised instead of a SecurityException when the user can read but not delete.
     }
   }
 
@@ -469,46 +550,41 @@ public with sharing class RecordCloneHandler {
   }
 
   public static List<sObject> cloneRecords(
-    List<sObject> clonings,
+    List<sObject> originals,
     sObjectSummary sObjectSummary
   ) {
     // append to child records' name fields
     String todayStr = Datetime.now().format('yyyy/MM/dd HH:mm');
-    for (sObject cloning : clonings) {
-      cloning.Id = null;
+
+    // Insert clean copies that hold only the clonable fields. The queried originals also carry their
+    // child relationship lists, and user mode DML rejects those as fields that cannot be written.
+    List<sObject> clonings = new List<sObject>();
+    for (sObject original : originals) {
+      sObject cloning = copyClonableFields(original, sObjectSummary);
       if (sObjectSummary.isNamable) {
         // Parent record name
         // use sObject parentRecordNameFormat or specify custom record name inputted by user.
-        // cloning.put(sObjectSummary.nameField, newRecordName);
-
-        if (sObjectSummary.isNamable) {
-          String originalRecordName = (String) cloning.get(
-            sObjectSummary.nameField
-          );
-          String nameValue = originalRecordName;
-          if (
-            sObjectSummary.childRecordNameFormat ==
-            RecordCloneChildRecordNamePicklist.valueWithCloned
-          ) {
-            nameValue = 'Cloned - ' + originalRecordName;
-          } else if (
-            sObjectSummary.childRecordNameFormat ==
-            RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
-          ) {
-            nameValue = 'Cloned - ' + originalRecordName + ' - ' + todayStr;
-          }
-          cloning.put(sObjectSummary.nameField, nameValue);
+        String originalRecordName = (String) original.get(
+          sObjectSummary.nameField
+        );
+        String nameValue = originalRecordName;
+        if (
+          sObjectSummary.childRecordNameFormat ==
+          RecordCloneChildRecordNamePicklist.valueWithCloned
+        ) {
+          nameValue = 'Cloned - ' + originalRecordName;
+        } else if (
+          sObjectSummary.childRecordNameFormat ==
+          RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
+        ) {
+          nameValue = 'Cloned - ' + originalRecordName + ' - ' + todayStr;
         }
+        cloning.put(sObjectSummary.nameField, nameValue);
       }
+      clonings.add(cloning);
     }
 
-    try {
-      insert clonings;
-    } catch (DmlException e) {
-      throw new RecordCloneException(
-        buildDmlMessage(sObjectSummary.label, clonings, e)
-      );
-    }
+    insertRows(clonings, sObjectSummary.label);
 
     if (
       sObjectSummary.children != null &&
@@ -516,8 +592,7 @@ public with sharing class RecordCloneHandler {
     ) {
       // remove child record IDs, assign then cloned parent record Id to ref field
       List<ChildBatch> batches = new List<ChildBatch>();
-      List<Id> ocrIds = new List<Id>();
-      Boolean ocrIsDeletable = false;
+      List<Id> opportunityIds = new List<Id>();
       for (String childRelName : sObjectSummary.children.keySet()) {
         sObjectSummary childSummary = sObjectSummary.children.get(childRelName);
 
@@ -527,10 +602,12 @@ public with sharing class RecordCloneHandler {
 
         ChildBatch batch = new ChildBatch();
         batch.summary = childSummary;
-        for (sObject cloning : clonings) {
+        for (
+          Integer parentIndex = 0; parentIndex < originals.size(); parentIndex++
+        ) {
           sObject[] children;
           try {
-            children = cloning.getSObjects(childRelName);
+            children = originals[parentIndex].getSObjects(childRelName);
           } catch (System.SObjectException e) {
             continue;
           }
@@ -543,10 +620,10 @@ public with sharing class RecordCloneHandler {
           // Delete the created record as of now.
           if (
             sObjectSummary.apiName == 'Opportunity' &&
-            childRelName == 'OpportunityContactRoles'
+            childRelName == 'OpportunityContactRoles' &&
+            sObjectSummary.isDeletable
           ) {
-            ocrIsDeletable = sObjectSummary.isDeletable;
-            ocrIds.add(cloning.Id);
+            opportunityIds.add(clonings[parentIndex].Id);
           }
 
           for (Integer i = 0; i < children.size(); i++) {
@@ -570,7 +647,11 @@ public with sharing class RecordCloneHandler {
               children[i].put(childSummary.nameField, nameValue);
             }
 
-            children[i].put(childSummary.parentRelationshipField, cloning.Id);
+            children[i]
+              .put(
+                childSummary.parentRelationshipField,
+                clonings[parentIndex].Id
+              );
           }
           batch.rows.addAll(children);
         }
@@ -579,18 +660,8 @@ public with sharing class RecordCloneHandler {
         }
       }
 
-      if (ocrIds.size() > 0 && ocrIsDeletable) {
-        List<OpportunityContactRole> ocrs = [
-          SELECT Id
-          FROM OpportunityContactRole
-          WHERE OpportunityId IN :ocrIds
-        ];
-        try {
-          delete ocrs;
-        } catch (DMLException e) {
-          // if failed to delete auto-generated OpportunityContactRole,
-          // leave it.
-        }
+      if (!opportunityIds.isEmpty()) {
+        deleteAutoCreatedContactRoles(opportunityIds);
       }
 
       insertChildBatches(batches);

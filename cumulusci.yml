@@ -3,7 +3,7 @@ project:
   name: UST-RecordClone
   package:
     name: UST-RecordClone
-    api_version: "67.0"
+    api_version: "68.0"
   git:
   source_format: sfdx
 

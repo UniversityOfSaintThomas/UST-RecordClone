@@ -249,6 +249,9 @@ public with sharing class sObjectSummary {
     DescribeSObjectResult describe = recordId.getSObjectType().getDescribe();
 
     String objectName = describe.getLocalName();
+    // SYSTEM_MODE on purpose: this is admin-owned clone configuration, not user data. A user who can
+    // clone a record does not need read access to the settings type, and a probe showed that
+    // USER_MODE throws a QueryException for such a user.
     List<RecordCloneSettings__mdt> settings = [
       SELECT
         Id,
@@ -258,6 +261,7 @@ public with sharing class sObjectSummary {
         ChildRecordNameType__c
       FROM RecordCloneSettings__mdt
       WHERE ObjectName__c = :objectName
+      WITH SYSTEM_MODE
     ];
 
     String childRelationshipNames = '';
@@ -302,12 +306,15 @@ public with sharing class sObjectSummary {
           .containsKey('IsPersonAccount')
       ) {
         try {
-          sObject acc = Database.query(
-            'SELECT Id, IsPersonAccount FROM Account where Id = \'' +
-            recordId +
-            '\''
+          List<sObject> found = Database.queryWithBinds(
+            'SELECT Id, IsPersonAccount FROM Account WHERE Id = :recordId',
+            new Map<String, Object>{ 'recordId' => recordId },
+            AccessLevel.USER_MODE
           );
-          Boolean IsPersonAccount = (Boolean) acc.get('IsPersonAccount');
+          if (found.isEmpty()) {
+            return null;
+          }
+          Boolean IsPersonAccount = (Boolean) found[0].get('IsPersonAccount');
           if (IsPersonAccount) {
             specifiedNameField = 'LastName';
           } else {

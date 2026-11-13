@@ -350,15 +350,15 @@ private class RecordCloneTest {
     System.assertNotEquals(noYesNoCloned1, null);
     System.assertNotEquals(noYesNoCloned1.Id, null);
     System.assertNotEquals(
-      noYesNoCloned1.getSObjects('CaseContactRoles'),
-      null
+      0,
+      [SELECT COUNT() FROM CaseContactRole WHERE CasesId = :noYesNoCloned1.Id],
+      'The cloned case should have its own contact roles'
     );
     System.assertNotEquals(
-      noYesNoCloned1.getSObjects('CaseContactRoles').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE ParentId = :noYesNoCloned1.Id],
+      'The cloned case should have its own child cases'
     );
-    System.assertNotEquals(noYesNoCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(noYesNoCloned1.getSObjects('Cases').size(), 0);
 
     sObject yesYesNoCloned1 = RecordCloneController.execClone(
       a.Id,
@@ -369,10 +369,16 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesYesNoCloned1, null);
     System.assertNotEquals(yesYesNoCloned1.Id, null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Cases').size(), 0);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Contacts'), null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Contacts').size(), 0);
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Case WHERE AccountId = :yesYesNoCloned1.Id],
+      'The cloned account should have its own cases'
+    );
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Contact WHERE AccountId = :yesYesNoCloned1.Id],
+      'The cloned account should have its own contacts'
+    );
 
     sObject yesYesNoCloned2 = RecordCloneController.execClone(
       a.Id,
@@ -383,13 +389,16 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesYesNoCloned2, null);
     System.assertNotEquals(yesYesNoCloned2.Id, null);
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Opportunities'), null);
     System.assertNotEquals(
-      yesYesNoCloned2.getSObjects('Opportunities').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Opportunity WHERE AccountId = :yesYesNoCloned2.Id],
+      'The cloned account should have its own opportunities'
     );
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Contacts'), null);
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Contacts').size(), 0);
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Contact WHERE AccountId = :yesYesNoCloned2.Id],
+      'The cloned account should have its own contacts'
+    );
 
     // without relationship, with excludedFields
     sObject noNoYesCloned1 = RecordCloneController.execClone(
@@ -443,15 +452,15 @@ private class RecordCloneTest {
     System.assertEquals(checkNoYesYesCloned1.AccountId, null);
     System.assertEquals(checkNoYesYesCloned1.ClosedDate, null);
     System.assertNotEquals(
-      noYesYesCloned1.getSObjects('CaseContactRoles'),
-      null
+      0,
+      [SELECT COUNT() FROM CaseContactRole WHERE CasesId = :noYesYesCloned1.Id],
+      'The cloned case should have its own contact roles'
     );
     System.assertNotEquals(
-      noYesYesCloned1.getSObjects('CaseContactRoles').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE ParentId = :noYesYesCloned1.Id],
+      'The cloned case should have its own child cases'
     );
-    System.assertNotEquals(noYesYesCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(noYesYesCloned1.getSObjects('Cases').size(), 0);
 
     sObject withNullChildRecordName = RecordCloneController.execClone(
       a.Id,
@@ -462,10 +471,10 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(withNullChildRecordName, null);
     System.assertNotEquals(withNullChildRecordName.Id, null);
-    System.assertNotEquals(withNullChildRecordName.getSObjects('Cases'), null);
     System.assertNotEquals(
-      withNullChildRecordName.getSObjects('Cases').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE AccountId = :withNullChildRecordName.Id],
+      'The cloned account should have its own cases'
     );
 
     sObject oppExceptional = RecordCloneController.execClone(
@@ -478,20 +487,22 @@ private class RecordCloneTest {
     System.assertNotEquals(oppExceptional, null);
     System.assertNotEquals(oppExceptional.Id, null);
     System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityContactRoles'),
-      null
+      0,
+      [
+        SELECT COUNT()
+        FROM OpportunityContactRole
+        WHERE OpportunityId = :oppExceptional.Id
+      ],
+      'The cloned opportunity should have its own contact roles'
     );
     System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityContactRoles').size(),
-      0
-    );
-    System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityLineItems'),
-      null
-    );
-    System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityLineItems').size(),
-      0
+      0,
+      [
+        SELECT COUNT()
+        FROM OpportunityLineItem
+        WHERE OpportunityId = :oppExceptional.Id
+      ],
+      'The cloned opportunity should have its own line items'
     );
   }
 
