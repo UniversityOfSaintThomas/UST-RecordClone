@@ -3,7 +3,7 @@ project:
   name: UST-RecordClone
   package:
     name: UST-RecordClone
-    api_version: "67.0"
+    api_version: "68.0"
   git:
   source_format: sfdx
 
@@ -22,3 +22,90 @@ tasks:
   run_tests:
     options:
       required_org_code_coverage_percent: 75
+
+  # ---------------------------------------------------------------------------
+  # Sample objects and data used to exercise RecordClone (ECRMSF-5087).
+  # Everything below lives outside force-app, so it is never packaged.
+  # ---------------------------------------------------------------------------
+  deploy_sample_model:
+    group: RecordClone sample data
+    description: Deploys the Sample_* objects and Sample Data Access permission set (unpackaged, dev orgs only)
+    class_path: cumulusci.tasks.salesforce.Deploy
+    options:
+      path: unpackaged/sample/model
+
+  assign_sample_permission_set:
+    group: RecordClone sample data
+    description: Gives the running user field access to the Sample_* objects
+    class_path: cumulusci.tasks.salesforce.users.permsets.AssignPermissionSets
+    options:
+      api_names: Sample_Data_Access
+
+  deploy_sample_tools:
+    group: RecordClone sample data
+    description: Deploys the clone harness class (unpackaged, dev orgs only). Needs the sample model first.
+    class_path: cumulusci.tasks.salesforce.Deploy
+    options:
+      path: unpackaged/sample/tools
+
+  arm_sample_clone_failures:
+    group: RecordClone sample data
+    description: After the sample data loads, sets up the records that fail at clone time (withdrawn application, inactive term)
+    class_path: cumulusci.tasks.apex.anon.AnonymousApexTask
+    options:
+      path: scripts/arm_sample_clone_failures.apex
+
+  run_clone_harness:
+    group: RecordClone sample data
+    description: Runs part 1 of the clone harness and fails if any case misbehaves. Use the check_clone_harness flow for all four parts.
+    class_path: cumulusci.tasks.apex.anon.AnonymousApexTask
+    options:
+      apex: RecordCloneHarness.run('strict,part=1');
+
+flows:
+  config_dev:
+    steps:
+      3:
+        task: deploy_sample_model
+      4:
+        task: assign_sample_permission_set
+      5:
+        task: deploy_sample_tools
+      91:
+        task: arm_sample_clone_failures
+
+  check_clone_harness:
+    group: RecordClone sample data
+    description: Runs all four parts of the clone harness against the dev org. Fails on the first part with an unexpected result.
+    steps:
+      1:
+        task: run_clone_harness
+      2:
+        task: run_clone_harness
+        options:
+          apex: RecordCloneHarness.run('strict,part=2');
+      3:
+        task: run_clone_harness
+        options:
+          apex: RecordCloneHarness.run('strict,part=3');
+      4:
+        task: run_clone_harness
+        options:
+          apex: RecordCloneHarness.run('strict,part=4');
+
+  sample_data:
+    group: RecordClone sample data
+    description: Deploys the sample objects, loads the sample dataset and arms the failing scenarios in an existing dev org
+    steps:
+      1:
+        task: deploy_sample_model
+      2:
+        task: assign_sample_permission_set
+      3:
+        task: deploy_sample_tools
+      4:
+        task: load_sample_data
+        options:
+          dataset: dev
+      5:
+        task: arm_sample_clone_failures

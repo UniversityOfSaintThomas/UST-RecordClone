@@ -4,14 +4,10 @@
   SPDX-License-Identifier: BSD-3-Clause
   For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause 
 */
-.title {
-  font-size: 1.1rem;
-  font-weight: bold;
-}
-.section {
-  margin: 0.5rem 0;
-}
-.section-title {
-  font-weight: bold;
-  border-bottom: 1px solid #dadada;
+
+/*
+  A long list of relationships scrolls in place instead of pushing the page down.
+*/
+.c-relationship-list {
+  max-height: var(--slds-g-sizing-14, 15rem);
 }

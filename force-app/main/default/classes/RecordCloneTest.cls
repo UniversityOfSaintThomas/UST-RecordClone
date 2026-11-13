@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-@isTest
+@IsTest
 private class RecordCloneTest {
   @IsTest
   private static void picklistTest() {
@@ -50,11 +50,11 @@ private class RecordCloneTest {
       null,
       null
     );
-    System.assertNotEquals(noNoSummary1, null);
-    System.assertEquals(noNoSummary1.isClonable, true);
-    System.assertEquals(noNoSummary1.children, null);
-    System.assertNotEquals(noNoSummary1.fields, null);
-    System.assertNotEquals(noNoSummary1.fields.size(), 0);
+    System.assertNotEquals(noNoSummary2, null);
+    System.assertEquals(noNoSummary2.isClonable, true);
+    System.assertEquals(noNoSummary2.children, null);
+    System.assertNotEquals(noNoSummary2.fields, null);
+    System.assertNotEquals(noNoSummary2.fields.size(), 0);
 
     // with relationship, without excludedFields
     sObjectSummary yesNoSummary1 = RecordCloneController.getSObjectSummary(
@@ -337,7 +337,6 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesNoNoCloned2, null);
     System.assertNotEquals(yesNoNoCloned2.Id, null);
-    System.debug(yesNoNoCloned2);
 
     // with relationship, without excludedFields
     sObject noYesNoCloned1 = RecordCloneController.execClone(
@@ -350,15 +349,15 @@ private class RecordCloneTest {
     System.assertNotEquals(noYesNoCloned1, null);
     System.assertNotEquals(noYesNoCloned1.Id, null);
     System.assertNotEquals(
-      noYesNoCloned1.getSObjects('CaseContactRoles'),
-      null
+      0,
+      [SELECT COUNT() FROM CaseContactRole WHERE CasesId = :noYesNoCloned1.Id],
+      'The cloned case should have its own contact roles'
     );
     System.assertNotEquals(
-      noYesNoCloned1.getSObjects('CaseContactRoles').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE ParentId = :noYesNoCloned1.Id],
+      'The cloned case should have its own child cases'
     );
-    System.assertNotEquals(noYesNoCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(noYesNoCloned1.getSObjects('Cases').size(), 0);
 
     sObject yesYesNoCloned1 = RecordCloneController.execClone(
       a.Id,
@@ -369,10 +368,16 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesYesNoCloned1, null);
     System.assertNotEquals(yesYesNoCloned1.Id, null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Cases').size(), 0);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Contacts'), null);
-    System.assertNotEquals(yesYesNoCloned1.getSObjects('Contacts').size(), 0);
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Case WHERE AccountId = :yesYesNoCloned1.Id],
+      'The cloned account should have its own cases'
+    );
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Contact WHERE AccountId = :yesYesNoCloned1.Id],
+      'The cloned account should have its own contacts'
+    );
 
     sObject yesYesNoCloned2 = RecordCloneController.execClone(
       a.Id,
@@ -383,13 +388,16 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesYesNoCloned2, null);
     System.assertNotEquals(yesYesNoCloned2.Id, null);
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Opportunities'), null);
     System.assertNotEquals(
-      yesYesNoCloned2.getSObjects('Opportunities').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Opportunity WHERE AccountId = :yesYesNoCloned2.Id],
+      'The cloned account should have its own opportunities'
     );
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Contacts'), null);
-    System.assertNotEquals(yesYesNoCloned2.getSObjects('Contacts').size(), 0);
+    System.assertNotEquals(
+      0,
+      [SELECT COUNT() FROM Contact WHERE AccountId = :yesYesNoCloned2.Id],
+      'The cloned account should have its own contacts'
+    );
 
     // without relationship, with excludedFields
     sObject noNoYesCloned1 = RecordCloneController.execClone(
@@ -443,15 +451,15 @@ private class RecordCloneTest {
     System.assertEquals(checkNoYesYesCloned1.AccountId, null);
     System.assertEquals(checkNoYesYesCloned1.ClosedDate, null);
     System.assertNotEquals(
-      noYesYesCloned1.getSObjects('CaseContactRoles'),
-      null
+      0,
+      [SELECT COUNT() FROM CaseContactRole WHERE CasesId = :noYesYesCloned1.Id],
+      'The cloned case should have its own contact roles'
     );
     System.assertNotEquals(
-      noYesYesCloned1.getSObjects('CaseContactRoles').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE ParentId = :noYesYesCloned1.Id],
+      'The cloned case should have its own child cases'
     );
-    System.assertNotEquals(noYesYesCloned1.getSObjects('Cases'), null);
-    System.assertNotEquals(noYesYesCloned1.getSObjects('Cases').size(), 0);
 
     sObject withNullChildRecordName = RecordCloneController.execClone(
       a.Id,
@@ -462,10 +470,10 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(withNullChildRecordName, null);
     System.assertNotEquals(withNullChildRecordName.Id, null);
-    System.assertNotEquals(withNullChildRecordName.getSObjects('Cases'), null);
     System.assertNotEquals(
-      withNullChildRecordName.getSObjects('Cases').size(),
-      0
+      0,
+      [SELECT COUNT() FROM Case WHERE AccountId = :withNullChildRecordName.Id],
+      'The cloned account should have its own cases'
     );
 
     sObject oppExceptional = RecordCloneController.execClone(
@@ -478,20 +486,22 @@ private class RecordCloneTest {
     System.assertNotEquals(oppExceptional, null);
     System.assertNotEquals(oppExceptional.Id, null);
     System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityContactRoles'),
-      null
+      0,
+      [
+        SELECT COUNT()
+        FROM OpportunityContactRole
+        WHERE OpportunityId = :oppExceptional.Id
+      ],
+      'The cloned opportunity should have its own contact roles'
     );
     System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityContactRoles').size(),
-      0
-    );
-    System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityLineItems'),
-      null
-    );
-    System.assertNotEquals(
-      oppExceptional.getSObjects('OpportunityLineItems').size(),
-      0
+      0,
+      [
+        SELECT COUNT()
+        FROM OpportunityLineItem
+        WHERE OpportunityId = :oppExceptional.Id
+      ],
+      'The cloned opportunity should have its own line items'
     );
   }
 
@@ -577,6 +587,88 @@ private class RecordCloneTest {
     System.assertNotEquals(clonedMultiple[0], null);
     System.assertNotEquals(clonedMultiple[0].size(), 0);
     System.assertNotEquals(clonedMultiple[0][0], null);
+  }
+
+  @IsTest
+  private static void testExecCloneParentFailureSurfacesMessage() {
+    Account a = new Account(Name = 'Parent Failure Source');
+    insert a;
+
+    // Account.Name allows 255 characters, so this makes the parent insert fail
+    String tooLongName = 'x'.repeat(300);
+
+    String thrownMessage;
+    try {
+      RecordCloneController.execClone(
+        a.Id,
+        tooLongName,
+        '',
+        '',
+        RecordCloneChildRecordNamePicklist.valueOriginalName
+      );
+    } catch (AuraHandledException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected an AuraHandledException');
+    Assert.isTrue(
+      thrownMessage.contains('STRING_TOO_LONG'),
+      'Message should carry the status code: ' + thrownMessage
+    );
+    Assert.isTrue(
+      thrownMessage.contains('Account'),
+      'Message should name the object: ' + thrownMessage
+    );
+    Assert.areNotEqual(
+      'Script-thrown exception',
+      thrownMessage,
+      'setMessage must be called or the client only sees the generic text'
+    );
+  }
+
+  @IsTest
+  private static void testExecCloneChildFailureSurfacesMessageAndRollsBack() {
+    Account a = new Account(Name = 'Child Failure Source');
+    insert a;
+
+    // Opportunity.Name allows 120 characters. 'Cloned - ' + name + ' - yyyy/MM/dd HH:mm'
+    // adds 28 characters, so a 115 character name overflows only on the cloned child.
+    Opportunity o = new Opportunity(
+      Name = 'o'.repeat(115),
+      StageName = 'Prospecting',
+      CloseDate = Date.today(),
+      AccountId = a.Id
+    );
+    insert o;
+
+    String newParentName = 'Rolled Back Parent';
+    String thrownMessage;
+    try {
+      RecordCloneController.execClone(
+        a.Id,
+        newParentName,
+        'Opportunities',
+        '',
+        RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
+      );
+    } catch (AuraHandledException e) {
+      thrownMessage = e.getMessage();
+    }
+
+    Assert.isNotNull(thrownMessage, 'Expected an AuraHandledException');
+    Assert.isTrue(
+      thrownMessage.contains('STRING_TOO_LONG'),
+      'Message should carry the status code: ' + thrownMessage
+    );
+    Assert.isTrue(
+      thrownMessage.contains('Opportunity'),
+      'Message should name the child object that failed: ' + thrownMessage
+    );
+    Assert.areEqual(
+      0,
+      [SELECT COUNT() FROM Account WHERE Name = :newParentName],
+      'Parent clone must be rolled back when a child fails'
+    );
   }
 
   @IsTest

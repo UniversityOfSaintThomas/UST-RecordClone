@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
+/**
+ * Supports the Record Clone configuration helper, which lists the child relationships an object has
+ * so an admin can choose which to clone.
+ */
 public with sharing class RecordCloneDebugController {
+  /**
+   * The child relationships of one object, by relationship name, with the label of each child object.
+   */
   public with sharing class RecordCloneDebugSummary {
     @AuraEnabled
     public String objectName;
@@ -21,6 +28,14 @@ public with sharing class RecordCloneDebugController {
   }
 
   @AuraEnabled(cacheable=true)
+  /**
+   * Lists every child relationship of an object. The object is the one named, or, if no name is given,
+   * the object of the record.
+   *
+   * @param recordId The Id of a record of the object, used when no object name is given
+   * @param objectName The API name of the object, or blank to use the record's object
+   * @return The relationships, or null when neither a record nor a valid object name is given
+   */
   public static RecordCloneDebugSummary showAllChildRelationships(
     Id recordId,
     String objectName
@@ -32,7 +47,6 @@ public with sharing class RecordCloneDebugController {
       DescribeSObjectResult describe = recordId.getSObjectType().getDescribe();
       objectName = describe.getLocalName();
     }
-    System.debug(objectName);
     Map<String, String> result = new Map<String, String>();
     sObjectType sObjType = (sObjectType) Schema.getGlobalDescribe()
       .get(objectName);

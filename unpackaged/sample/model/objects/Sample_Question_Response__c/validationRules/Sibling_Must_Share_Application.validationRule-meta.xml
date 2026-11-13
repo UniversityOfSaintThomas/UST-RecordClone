@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Sibling_Must_Share_Application</fullName>
+    <active>true</active>
+    <description
+  >The requirement response a question response points at must belong to the same application. Checked on insert, so a clone must point at the cloned sibling by the time the row is inserted.</description>
+    <errorConditionFormula
+  >AND(NOT(ISBLANK(Requirement_Response__c)), Requirement_Response__r.Application__c &lt;&gt; Application__c)</errorConditionFormula>
+    <errorMessage
+  >The requirement response must belong to the same application.</errorMessage>
+</ValidationRule>

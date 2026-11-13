@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Question__c</fullName>
+    <label>Question</label>
+    <description
+  >Shared question definition. Should carry over unchanged.</description>
+    <type>Lookup</type>
+    <referenceTo>Sample_Question__c</referenceTo>
+    <relationshipName>Question_Responses</relationshipName>
+    <relationshipLabel>Question Responses</relationshipLabel>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <required>false</required>
+    <externalId>false</externalId>
+</CustomField>

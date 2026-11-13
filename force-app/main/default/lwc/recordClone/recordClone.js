@@ -10,6 +10,8 @@ import getNameFieldValue from "@salesforce/apex/RecordCloneController.getNameFie
 import execClone from "@salesforce/apex/RecordCloneController.execClone";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { NavigationMixin } from "lightning/navigation";
+import { describeReasons } from "c/recordCloneReasons";
+import { buildErrorMessage } from "c/recordCloneErrors";
 
 export default class RecordClone extends NavigationMixin(LightningElement) {
   @api recordId;
@@ -22,12 +24,16 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
   @api excludedFieldNames = "";
   @api childRelationshipNames = "";
   @api childRecordNameType = "";
-  @api targetRecordId;
+
+  // The record being cloned: the template record if one is set, otherwise the current record.
+  targetRecordId;
 
   nameField;
   objectName;
   isInitialized = false;
   isCloning = false;
+  // The details are folded away until the user asks for them, to keep the component small on the page.
+  detailsExpanded = false;
   shouldShowChildren = false;
   shouldShowExcludedFields = false;
   shouldShowIncludedFields = false;
@@ -87,7 +93,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     const clonableFields = [];
     const notClonableFields = [];
     if (sObjectSummary.fields && sObjectSummary.fields.length > 0) {
-      for (let field of sObjectSummary.fields) {
+      for (const field of sObjectSummary.fields) {
         if (field.isClonable) {
           clonableFields.push(field);
         } else {
@@ -98,7 +104,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     const clonableChildren = [];
     const notClonableChildren = [];
     if (sObjectSummary.children && sObjectSummary.children.length > 0) {
-      for (let child of sObjectSummary.children) {
+      for (const child of sObjectSummary.children) {
         if (child.isClonable) {
           clonableChildren.push(child);
         } else {
@@ -132,38 +138,25 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     return { ...sObjectSummary, children: children };
   }
 
-  buildErrorMessage = (errors) => {
-    let errorMessage = "";
-    if (Array.isArray(errors)) {
-      errors.forEach((err) => {
-        errorMessage += `[${err.statusCode}] ${err.message}\n`;
-      });
-    } else if (errors instanceof Object) {
-      for (let key in errors) {
-        if (Object.prototype.hasOwnProperty.call(errors, key)) {
-          const errs = errors[key];
-          for (let err of errs) {
-            errorMessage += `${key} - [${err.statusCode}] ${err.message}\n`;
-          }
-        }
-      }
-    }
-    return errorMessage;
-  };
-
   handleErrors = (errors) => {
     console.log(errors);
-    let errorMessage = "Unknown error";
+    let errorMessage = "";
     if (errors && errors.body) {
-      errorMessage = "";
       if (errors.body.fieldErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.fieldErrors);
+        errorMessage += buildErrorMessage(errors.body.fieldErrors);
       }
       if (errors.body.pageErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.pageErrors);
+        errorMessage += buildErrorMessage(errors.body.pageErrors);
+      }
+      // Apex exceptions (AuraHandledException) put their text in body.message
+      if (!errorMessage && typeof errors.body.message === "string") {
+        errorMessage = errors.body.message;
       }
     }
-    this.showErrorToast(errorMessage);
+    if (!errorMessage && errors && typeof errors.message === "string") {
+      errorMessage = errors.message;
+    }
+    this.showErrorToast(errorMessage || "Unknown error");
   };
 
   showSuccessToast = (title, message) => {
@@ -199,7 +192,6 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
   };
 
   onclickClone = () => {
-    this.isCloning = true;
     // if templateRecordId is specified, prioritize  it
     const recordId = this.templateRecordId
       ? this.templateRecordId
@@ -208,6 +200,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
       this.showErrorToast(`There is no available Record Id`);
       return;
     }
+    this.isCloning = true;
 
     execClone({
       recordId,
@@ -218,7 +211,9 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     })
       .then((clonedRecord) => {
         if (!clonedRecord) {
-          throw new Error("No Data");
+          throw new Error(
+            "The clone did not return a new record. Check that a new record name is entered and that you can access the record."
+          );
         }
         this.showSuccessToast(
           "Clone well done!",
@@ -260,7 +255,52 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     })`;
   }
 
+  // A label that the admin typed is shown. With none, the input keeps a default label for screen
+  // readers and hides it, as the card already says what the field is for.
+  get nameInputLabelText() {
+    return this.nameInputLabel || "New record name";
+  }
+
   get nameInputVariant() {
-    return this.nameInputLabel ? "label-hidden" : "standard";
+    return this.nameInputLabel ? "standard" : "label-hidden";
+  }
+
+  get notClonableHeadline() {
+    const label = this.sObjectSummary.label || "This type of";
+    return `${label} records can't be cloned.`;
+  }
+
+  get notClonableReasons() {
+    return describeReasons(this.sObjectSummary.errorMessage, "object");
+  }
+
+  get hasNotClonableReasons() {
+    return this.notClonableReasons.length > 0;
+  }
+
+  toggleDetails = () => {
+    this.detailsExpanded = !this.detailsExpanded;
+  };
+
+  get detailsIconName() {
+    return this.detailsExpanded
+      ? "utility:chevrondown"
+      : "utility:chevronright";
+  }
+
+  get detailsAriaExpanded() {
+    return this.detailsExpanded ? "true" : "false";
+  }
+
+  get hasChildItems() {
+    return this.clonableChildren.length + this.notClonableChildren.length > 0;
+  }
+
+  get hasExcludedFields() {
+    return this.notClonableFields.length > 0;
+  }
+
+  get hasIncludedFields() {
+    return this.clonableFields.length > 0;
   }
 }

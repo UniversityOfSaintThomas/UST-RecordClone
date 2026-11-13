@@ -12,7 +12,9 @@
         <header class="slds-media slds-media_center slds-has-flexi-truncate">
           <div class="slds-media__body">
             <h2 class="slds-card__header-title">
-              <span class="slds-truncate">{componentTitle}</span>
+              <span class="slds-truncate" title={componentTitle}
+                >{componentTitle}</span
+              >
             </h2>
           </div>
         </header>
@@ -20,88 +22,156 @@
     </template>
 
     <div class="slds-card__body slds-card__body_inner">
-      <template if:true={isInitialized}>
-        <template if:true={sObjectSummary.isClonable}>
-          <!-- while executing clone, show spinner -->
-          <template if:true={isCloning}>
-            <div>
+      <div class="slds-is-relative">
+        <template if:true={isInitialized}>
+          <template if:true={sObjectSummary.isClonable}>
+            <!-- ready to clone: the name input and the button share a row, and wrap when the space is narrow -->
+            <div
+              class="
+                slds-grid slds-wrap
+                slds-grid_vertical-align-end
+                slds-gutters_x-small
+              "
+            >
+              <!-- if the sObject has name field, an input for the new record name shown -->
+              <template if:true={sObjectSummary.isNamable}>
+                <div class="slds-col slds-grow c-name-field">
+                  <lightning-input
+                    type="text"
+                    value={newParentRecordName}
+                    onchange={handleRecordNameChange}
+                    label={nameInputLabelText}
+                    placeholder={sObjectSummary.nameField}
+                    variant={nameInputVariant}
+                    disabled={isCloning}
+                  ></lightning-input>
+                </div>
+              </template>
+              <!-- clone execution button -->
+              <div class="slds-col slds-grow-none">
+                <lightning-button
+                  label={cloneButtonLabel}
+                  icon-name="utility:copy"
+                  onclick={onclickClone}
+                  variant="brand"
+                  disabled={isCloning}
+                ></lightning-button>
+              </div>
+            </div>
+            <!-- while executing clone, the form stays in place under the spinner -->
+            <template if:true={isCloning}>
               <lightning-spinner
-                alternative-text="Loading"
-                size="medium"
+                alternative-text="Cloning"
+                size="small"
               ></lightning-spinner>
-              <h6>Cloning...</h6>
+            </template>
+          </template>
+
+          <!-- show why, in case that the sObject is not supported to clone for the user -->
+          <template if:false={sObjectSummary.isClonable}>
+            <div
+              class="
+                slds-scoped-notification slds-scoped-notification_light
+                slds-media slds-media_center
+              "
+              role="status"
+            >
+              <div class="slds-media__figure">
+                <lightning-icon
+                  icon-name="utility:warning"
+                  size="x-small"
+                  variant="warning"
+                  alternative-text="Warning"
+                ></lightning-icon>
+              </div>
+              <div class="slds-media__body">
+                <p class="slds-text-title_bold">{notClonableHeadline}</p>
+                <template if:true={hasNotClonableReasons}>
+                  <ul class="slds-list_dotted">
+                    <template for:each={notClonableReasons} for:item="reason">
+                      <li key={reason.code} title={reason.code}>
+                        {reason.text}
+                      </li>
+                    </template>
+                  </ul>
+                </template>
+              </div>
             </div>
           </template>
-          <!-- ready to clone state  -->
-          <template if:false={isCloning}>
-            <!-- if the sObject has name field, an input for the new record name shown -->
-            <template if:true={sObjectSummary.isNamable}>
-              <lightning-input
-                class="slds-m-bottom_x-small"
-                type="text"
-                value={newParentRecordName}
-                onchange={handleRecordNameChange}
-                label={nameInputLabel}
-                placeholder={sObjectSummary.nameField}
-                variant={nameInputVariant}
-              ></lightning-input>
-            </template>
-
-            <!-- clone execution button -->
-            <lightning-button
-              label={cloneButtonLabel}
-              onclick={onclickClone}
-              variant="brand"
-            ></lightning-button>
-          </template>
         </template>
 
-        <!-- show error message in case that the sObject is not supported to clone for the user -->
-        <template if:false={sObjectSummary.isClonable}>
-          <div>
-            <h6>This sObject is not supported.</h6>
+        <!-- while initializing the component -->
+        <template if:false={isInitialized}>
+          <div class="slds-p-vertical_large">
+            <lightning-spinner
+              alternative-text="Initializing"
+              size="small"
+            ></lightning-spinner>
           </div>
         </template>
-      </template>
+      </div>
 
-      <!-- while initializing the component -->
-      <template if:false={isInitialized}>
-        <div>
-          <lightning-spinner
-            alternative-text="Loading"
-            size="medium"
-          ></lightning-spinner>
-          <h6>Initializing...</h6>
+      <!-- [Option] a user can see which children and fields are bundled. -->
+      <template if:true={showDetails}>
+        <div class="slds-m-top_small">
+          <lightning-button
+            variant="base"
+            label="Clone details"
+            icon-name={detailsIconName}
+            aria-expanded={detailsAriaExpanded}
+            onclick={toggleDetails}
+          ></lightning-button>
         </div>
+        <template if:true={detailsExpanded}>
+          <lightning-accordion
+            class="c-details-accordion"
+            allow-multiple-sections-open
+          >
+            <!-- list of child objects that will be cloned together -->
+            <template if:true={hasChildItems}>
+              <lightning-accordion-section
+                name="children"
+                label={childrenTitle}
+              >
+                <c-record-clone-related-list-item
+                  title={childrenTitle}
+                  ok-items={clonableChildren}
+                  ng-items={notClonableChildren}
+                  kind="object"
+                  error-message={childrenListError}
+                  is-error={isExceedingMaxChidrenCount}
+                ></c-record-clone-related-list-item>
+              </lightning-accordion-section>
+            </template>
+
+            <!-- list of fields that will be excluded from cloning -->
+            <template if:true={hasExcludedFields}>
+              <lightning-accordion-section
+                name="excluded"
+                label={excludedFieldsTitle}
+              >
+                <c-record-clone-related-list-item
+                  title={excludedFieldsTitle}
+                  ng-items={notClonableFields}
+                ></c-record-clone-related-list-item>
+              </lightning-accordion-section>
+            </template>
+
+            <!-- list of fields that will be included in cloning -->
+            <template if:true={hasIncludedFields}>
+              <lightning-accordion-section
+                name="included"
+                label={includedFieldsTitle}
+              >
+                <c-record-clone-related-list-item
+                  title={includedFieldsTitle}
+                  ok-items={clonableFields}
+                ></c-record-clone-related-list-item>
+              </lightning-accordion-section>
+            </template>
+          </lightning-accordion>
+        </template>
       </template>
     </div>
-
-    <!-- [Option] a user can see which children and fields are bundled. -->
-    <template if:true={showDetails}>
-      <footer class="slds-card__footer">
-        <ul>
-          <!-- list of child objects that will be cloned together -->
-          <c-record-clone-related-list-item
-            title={childrenTitle}
-            ok-items={clonableChildren}
-            ng-items={notClonableChildren}
-            error-message={childrenListError}
-            is-error={isExceedingMaxChidrenCount}
-          ></c-record-clone-related-list-item>
-
-          <!-- list of fields that will be excluded from cloning -->
-          <c-record-clone-related-list-item
-            title={excludedFieldsTitle}
-            ng-items={notClonableFields}
-          ></c-record-clone-related-list-item>
-
-          <!-- list of fields that will be included in cloning -->
-          <c-record-clone-related-list-item
-            title={includedFieldsTitle}
-            ok-items={clonableFields}
-          ></c-record-clone-related-list-item>
-        </ul>
-      </footer>
-    </template>
   </article>
 </template>

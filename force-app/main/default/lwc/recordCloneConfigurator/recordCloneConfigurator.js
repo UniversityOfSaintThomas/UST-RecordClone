@@ -7,6 +7,7 @@
 import { LightningElement, api, track, wire } from "lwc";
 import showAllChildRelationships from "@salesforce/apex/RecordCloneDebugController.showAllChildRelationships";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import { buildErrorMessage } from "c/recordCloneErrors";
 
 export default class RecordCloneConfigurator extends LightningElement {
   @api
@@ -24,8 +25,14 @@ export default class RecordCloneConfigurator extends LightningElement {
 
   isInvalidObjectName = false;
 
+  // Apex rejects an empty string as an Id, and a wire that is given undefined never runs. So on a page
+  // with no record (app, home, utility bar, flow screen) the missing Id is sent as null.
+  get recordIdParameter() {
+    return this.recordId || null;
+  }
+
   @wire(showAllChildRelationships, {
-    recordId: "$recordId",
+    recordId: "$recordIdParameter",
     objectName: "$targetSObject"
   })
   allChildRelationships({ error, data }) {
@@ -40,8 +47,8 @@ export default class RecordCloneConfigurator extends LightningElement {
     const childrenList = [];
     const childrenListStr = [];
     this.objectName = data.objectName;
-    for (let key of Object.keys(data.relations)) {
-      childrenList.push(key + " : " + data.relations[key]);
+    for (const key of Object.keys(data.relations)) {
+      childrenList.push({ name: key, label: data.relations[key] });
       childrenListStr.push(key);
     }
     this.childrenList = childrenList;
@@ -52,35 +59,23 @@ export default class RecordCloneConfigurator extends LightningElement {
     return this.objectName && this.objectName.length > 0;
   }
 
-  buildErrorMessage = (errors) => {
-    let errorMessage = "";
-
-    if (Array.isArray(errors)) {
-      errors.forEach((err) => {
-        errorMessage += `[${err.statusCode}] ${err.message}\n`;
-      });
-    } else if (errors instanceof Object) {
-      for (let key in errors) {
-        if (Object.prototype.hasOwnProperty.call(errors, key)) {
-          const errs = errors[key];
-          for (let err of errs) {
-            errorMessage += `${key} - [${err.statusCode}] ${err.message}\n`;
-          }
-        }
-      }
-    }
-    return errorMessage;
-  };
+  get childrenTableLabel() {
+    return `Child relationships of ${this.objectName}`;
+  }
 
   handleErrors = (errors) => {
     let errorMessage = "Unknown error";
     if (errors && errors.body) {
       errorMessage = "";
       if (errors.body.fieldErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.fieldErrors);
+        errorMessage += buildErrorMessage(errors.body.fieldErrors);
       }
       if (errors.body.pageErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.pageErrors);
+        errorMessage += buildErrorMessage(errors.body.pageErrors);
+      }
+      // Apex exceptions (AuraHandledException) put their text in body.message
+      if (!errorMessage && typeof errors.body.message === "string") {
+        errorMessage = errors.body.message;
       }
     }
     const errorToast = new ShowToastEvent({

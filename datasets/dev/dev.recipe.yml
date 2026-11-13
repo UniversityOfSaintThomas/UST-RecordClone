@@ -1,0 +1,342 @@
+# Sample data for exercising RecordClone (ECRMSF-5087). Dev orgs only; never packaged.
+#
+# Shape (stand-in for Application / Requirement Response / Question Response / Award / Opportunity):
+#   Sample_Term__c, Sample_Requirement__c, Sample_Question__c   shared reference records
+#   Sample_Application__c                                       the record being cloned
+#     Sample_Requirement_Response__c   child, looks up a shared requirement
+#     Sample_Question_Response__c      child, looks up a shared question AND a sibling requirement response
+#     Sample_Award__c                  master-detail child (auto-number name)
+#     Sample_Audit_Entry__c            lookup child with a required unique key
+#     Opportunity                      standard-object child
+#
+# Each named scenario carries Expected_Outcome__c (PASS, FAIL_PARENT or FAIL_CHILD) for the standard
+# harness configuration. Two scenarios are broken AFTER the load by scripts/arm_sample_clone_failures.apex,
+# because the same rules would reject them during the load itself.
+
+# --- Shared reference records ------------------------------------------------------------------
+- object: Sample_Term__c
+  nickname: current_term
+  fields:
+    Name: Fall 2026
+    Banner_Code__c: "202610"
+    Is_Active__c: true
+
+- object: Sample_Term__c
+  nickname: next_term
+  fields:
+    Name: Spring 2027
+    Banner_Code__c: "202620"
+    Is_Active__c: true
+
+# Active now so applications can point at it; the arm script deactivates it.
+- object: Sample_Term__c
+  nickname: retired_term
+  fields:
+    Name: Fall 2025
+    Banner_Code__c: "202510"
+    Is_Active__c: true
+
+- object: Sample_Requirement__c
+  count: 6
+  fields:
+    Name: Requirement ${{child_index + 1}}
+    Requirement_Code__c: REQ-${{child_index + 1}}
+
+- object: Sample_Question__c
+  count: 8
+  fields:
+    Name: Question ${{child_index + 1}}
+    Question_Text__c: ${{fake.sentence(nb_words=8)}}
+
+# --- Named scenarios ---------------------------------------------------------------------------
+
+# 1. Everything a normal application has. Each question response points at the requirement
+#    response created just before it, so a correct clone should re-point those siblings.
+- object: Sample_Application__c
+  nickname: clean_application
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Clean application with every child type
+  friends:
+    - object: Sample_Requirement_Response__c
+      fields:
+        Name: Transcript
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Received
+    - object: Sample_Question_Response__c
+      fields:
+        Name: Essay prompt
+        Application__c:
+          reference: Sample_Application__c
+        Question__c:
+          random_reference: Sample_Question__c
+        Requirement_Response__c:
+          reference: Sample_Requirement_Response__c
+        Response_Text__c: ${{fake.sentence(nb_words=12)}}
+        External_Id__c: BN-QR-${{id}}
+    - object: Sample_Requirement_Response__c
+      fields:
+        Name: Recommendation letter
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Pending
+    - object: Sample_Question_Response__c
+      fields:
+        Name: Short answer
+        Application__c:
+          reference: Sample_Application__c
+        Question__c:
+          random_reference: Sample_Question__c
+        Requirement_Response__c:
+          reference: Sample_Requirement_Response__c
+        Response_Text__c: ${{fake.sentence(nb_words=12)}}
+        External_Id__c: BN-QR-${{id}}
+    - object: Sample_Award__c
+      fields:
+        Application__c:
+          reference: Sample_Application__c
+        Amount__c: 2500
+    - object: Opportunity
+      fields:
+        Name: Deposit - ${{fake.last_name}}
+        StageName: Prospecting
+        CloseDate: 2027-01-15
+        Sample_Application__c:
+          reference: Sample_Application__c
+        Sample_External_Id__c: BN-OPP-${{id}}
+
+# 2. Nothing hanging off it.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Draft
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Minimal application with no children
+
+# 3. No term at all. The lookup is optional, so this must clone.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Draft
+    Expected_Outcome__c: PASS
+    Scenario__c: Application with no term
+  friends:
+    - object: Sample_Requirement_Response__c
+      fields:
+        Name: Immunization record
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Pending
+
+# 4. Master-detail child only (auto-number name cannot be set).
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: next_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Admitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Application with awards only
+  friends:
+    - object: Sample_Award__c
+      count: 3
+      fields:
+        Application__c:
+          reference: Sample_Application__c
+        Amount__c:
+          random_number:
+            min: 500
+            max: 5000
+
+# 5. Plain lookup child with a required unique key. Standard configuration leaves it out
+#    (passes); a configuration that includes Audit_Entries__r cannot succeed.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Application with audit trail (required unique child field)
+  friends:
+    - object: Sample_Audit_Entry__c
+      count: 2
+      fields:
+        Name: Audit
+        Application__c:
+          reference: Sample_Application__c
+        Entry_Key__c: AUD-${{id}}
+        Reviewer_Note__c: ${{fake.sentence(nb_words=6)}}
+
+# 6. Armed after load: Status becomes Withdrawn. Cloning copies the status, then the
+#    Requirement Response validation rule rejects the new child rows.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: FAIL_CHILD
+    Scenario__c: Withdrawn application with responses (armed after load)
+  friends:
+    - object: Sample_Requirement_Response__c
+      count: 2
+      fields:
+        Name: Transcript
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Received
+
+# 7. Armed after load: its term is deactivated. The term lookup filter then rejects the
+#    cloned application itself. This is the "defer to a new term" problem in miniature.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: retired_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Admitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: FAIL_PARENT
+    Scenario__c: Application on a retired term (armed after load)
+  friends:
+    - object: Sample_Requirement_Response__c
+      fields:
+        Name: Transcript
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Received
+
+# 8. A child whose name is near the field limit. Prefixing "Cloned - " and a timestamp
+#    pushes it past 120 characters.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: FAIL_CHILD
+    Scenario__c: Child record name near the 120 character limit
+  friends:
+    - object: Opportunity
+      fields:
+        Name: ${{ "o" * 115 }}
+        StageName: Prospecting
+        CloseDate: 2027-01-15
+        Sample_Application__c:
+          reference: Sample_Application__c
+        Sample_External_Id__c: BN-OPP-${{id}}
+
+# 9. One application with a lot of children, to check volume and ordering.
+- object: Sample_Application__c
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Bulk application with 120 requirement and 120 question responses
+  friends:
+    - object: Sample_Requirement_Response__c
+      count: 120
+      fields:
+        Name: Requirement response ${{child_index + 1}}
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Received
+    - object: Sample_Question_Response__c
+      count: 120
+      fields:
+        Name: Question response ${{child_index + 1}}
+        Application__c:
+          reference: Sample_Application__c
+        Question__c:
+          random_reference: Sample_Question__c
+        Requirement_Response__c:
+          reference: Sample_Requirement_Response__c
+        Response_Text__c: ${{fake.sentence(nb_words=10)}}
+        External_Id__c: BN-QR-${{id}}
+
+# --- Volume: many ordinary applications, for the multi-record (Flow / invocable) path ----------
+- object: Sample_Application__c
+  count: 40
+  fields:
+    Name: ${{fake.name}}
+    Term__c:
+      reference: current_term
+    External_Id__c: BN-APP-${{id}}
+    Status__c: Submitted
+    Applicant_Email__c: ${{fake.email}}
+    Expected_Outcome__c: PASS
+    Scenario__c: Bulk ordinary application
+  friends:
+    - object: Sample_Requirement_Response__c
+      count: ${{random_number(min=1, max=4)}}
+      fields:
+        Name: Requirement response
+        Application__c:
+          reference: Sample_Application__c
+        Requirement__c:
+          random_reference: Sample_Requirement__c
+        External_Id__c: BN-RR-${{id}}
+        Status__c: Received
+    - object: Sample_Question_Response__c
+      count: ${{random_number(min=1, max=3)}}
+      fields:
+        Name: Question response
+        Application__c:
+          reference: Sample_Application__c
+        Question__c:
+          random_reference: Sample_Question__c
+        Requirement_Response__c:
+          reference: Sample_Requirement_Response__c
+        Response_Text__c: ${{fake.sentence(nb_words=10)}}
+        External_Id__c: BN-QR-${{id}}
+    - object: Sample_Award__c
+      fields:
+        Application__c:
+          reference: Sample_Application__c
+        Amount__c:
+          random_number:
+            min: 500
+            max: 5000

@@ -179,3 +179,246 @@ than hand-roll a parallel per-object Flow solution, because:
 - A hand-rolled per-object Flow solution would need to reimplement equivalent
   logic (name-field handling, child re-parenting, exclusion rules) per object,
   multiplying maintenance surface for the same underlying problem.
+
+## Implementation Status (updated 2026-11-12)
+
+### Sample data and harness
+
+The root causes below were checked against a sample dataset instead of guessed. It lives outside
+`force-app`, so it is never packaged, and `dev_org` builds it automatically.
+
+| What                                                                   | Where                                              |
+| ---------------------------------------------------------------------- | -------------------------------------------------- |
+| Sample objects, fields, validation rule, lookup filter, permission set | `unpackaged/sample/model`                          |
+| Harness class and its test (dev orgs only)                             | `unpackaged/sample/tools`                          |
+| Snowfakery dataset (49 applications, ~540 rows)                        | `datasets/dev/dev.recipe.yml`                      |
+| Step that breaks two scenarios after the load                          | `scripts/arm_sample_clone_failures.apex`           |
+| Full harness report, one file per part                                 | `scripts/clone_harness/part1.apex` to `part4.apex` |
+
+CumulusCI tasks and flows (all in `cumulusci.yml`):
+
+- `cci flow run sample_data --org dev` adds the sample data to an existing dev org.
+- `cci flow run check_clone_harness --org dev` is the pass/fail gate; it fails and names the case that misbehaved.
+- `dev_org` includes all of it through `config_dev`. A fresh scratch org built with `dev_org` alone reproduces the results.
+- Full report: `sf apex run --file scripts/clone_harness/part1.apex --target-org <alias>`, then parts 2 to 4. `cci` does not print debug logs, which is why the report is separate. One run is limited to 100 SOQL queries, hence four parts.
+
+The sample objects are a stand-in. They have the same shape as the Banner objects (shared definition
+lookups, sibling lookups, external IDs, a standard Opportunity), not the same schema. They show which
+classes of problem RecordClone mishandles. They cannot say which fields on the real objects need
+attention; that still needs the Enterprise team's list.
+
+### Findings that change the root-cause analysis
+
+- **Bug 1 was larger than described.** Only the parent `insert` was caught. Child inserts, and every insert on the Flow path, threw an uncaught `DmlException`. The LWC read only `fieldErrors` and `pageErrors`, so a thrown Apex error produced an empty toast. The "No Data" text was never shown either; users saw "Unknown error".
+- **Bug 2 confirmed.** A non-unique external ID was copied on the parent and on every child type (19 findings across the harness).
+- **Bug 3 is two different problems.**
+  - Lookups to shared definition records (a question or requirement) carry over correctly. Nothing to fix.
+  - A lookup to a _sibling_ record in the same clone (Question Response to Requirement Response) is copied unchanged, so the clone points at the original application's record. No error is raised. 120 of 120 on the bulk case.
+- **Bug 4 refined.** The configurator lists every relationship pointing at the object, plain lookups included. A child object with a required field the clone must drop (a required unique field) is shown as clonable but can never be inserted.
+- **Not in the original plan:** on the Flow path the child-name format from custom metadata is ignored (`sObjectSummary.getByRecordId(Id)` has an inverted null check). Child objects also ignore `ExcludedFieldNames__c`.
+
+### Fix status
+
+| Fix                                                 | Status                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Error propagation                                | Done (`983fb2a`). Message names the object, status code, reason and fields. A failed clone rolls back.                                                                                                                                                                                                            |
+| 2. Exclude external IDs                             | Done. `IS_EXTERNAL_ID` added in `sObjectSummary`. Harness findings for it: 19 to 0.                                                                                                                                                                                                                               |
+| 3. Sibling reference remap                          | Done. Children are inserted in dependency order and a lookup to another cloned child is pointed at the new record. Self-references and cycles are patched with one update after the inserts. Works on the single-record and Flow paths. Lookups to records outside the clone (shared definitions) are left alone. |
+| 4. Config-time check for children that cannot clone | Done. A child with a required field the clone must drop is shown as not clonable with `REQUIRED_FIELD_NOT_CLONABLE(Field)`, and the clone skips it instead of failing.                                                                                                                                            |
+| Child name format (inverted null check)             | Done. The Flow path now uses the format stored on the settings record.                                                                                                                                                                                                                                            |
+
+Every fix was checked by breaking it on purpose: the sample-data tests and the harness each fail with a clear message
+when the fix is removed. The same checks pass on a fresh scratch org built with `dev_org` alone.
+
+### Browser check (scratch org)
+
+The sample application record page (`Sample_Application_Record_Page`) shows the RecordClone component. Checked in a
+real browser:
+
+- A clean application clones, navigates to the new record, and shows the success toast. The clone has 2 requirement
+  responses, 2 question responses (each pointing at a requirement response under the **new** application), 1 award and
+  1 opportunity, and blank external IDs.
+- An application on a retired term shows the full reason in the error toast: `Clone failed. Sample Application - [FIELD_FILTER_VALIDATION_EXCEPTION] The term must be active. (Term__c)`. No partial clone was left behind.
+- The details panel lists the audit-entry child as not clonable (`REQUIRED_FIELD_NOT_CLONABLE(Entry_Key__c)`) and the
+  external ID field as excluded (`IS_EXTERNAL_ID`).
+
+Deploying the Apex classes alone is not enough for the toast: the component (`force-app/main/default/lwc`) must be
+deployed too, or users still see an empty "RecordClone Error" toast.
+
+### Coverage
+
+`RecordCloneHarnessTest` (unpackaged) covers the harness. Org-wide coverage is 88% with everything deployed.
+
+### API 68.0 and Code Analyzer (updated 2026-11-13)
+
+Everything is on API 68.0: the 8 classes (were 48.0), 3 LWC bundles (were 52.0), the 3 sample tools (were 67.0),
+`sfdx-project.json` (was 52.0) and `cumulusci.yml` (was 67.0).
+
+**What changed in the platform.** User mode as the default for Apex database operations, `with sharing` as the default,
+and the removal of `WITH SECURITY_ENFORCED` all arrived in API 67.0, not 68.0. The classes sat at 48.0, so moving them
+crossed all of it at once. `USER_MODE` and `SYSTEM_MODE` themselves are older than either version.
+
+**What the version bump alone did.** It failed 12 of 33 tests with `INVALID_FIELD_FOR_INSERT_UPDATE: bad field names on insert/update call: Contacts`. A queried record carries its child relationship lists, and user mode DML rejects them.
+At 48.0 they were ignored. The handler now inserts a clean copy of each parent built from the clonable fields
+(`copyClonableFields`) and reads the children from the original.
+
+**Explicit modes.** Every query and DML names its mode and uses bind variables:
+
+- Queries and DML run in `USER_MODE`. The running user's sharing, object permissions and field-level security apply.
+- The `RecordCloneSettings__mdt` read is `WITH SYSTEM_MODE`. It is admin-owned configuration. In user mode a user
+  without access to that type gets a `QueryException`, which would break cloning for every ordinary user.
+- A refused user mode DML throws `SecurityException` (cannot see the object) or `TypeException` "DML operation INSERT
+  not allowed" (can read, cannot create), not `DmlException`. Both are caught and reported with the object name.
+- `getNameFieldValue` took an object and field name from the browser and put them straight into the SOQL string. Both
+  are now checked against the record's own schema first.
+- On the Flow path, a user who cannot read the records got a bare `NullPointerException`. They now get "Clone failed.
+  The records could not be read."
+
+**Code Analyzer.** Critical 0, High 57 to 0. The 57 were: 23 `EagerlyLoadedDescribeSObjectResult` (tests, harness),
+15 `ApexCRUDViolation`, 11 `AvoidOldSalesforceApiVersions`, 6 `ApexSOQLInjection`, 2 `EmptyCatchBlock`. Moderate stayed at
+87, Low 92 to 93, Info 9 to 10. The new ones are naming rules in `RecordCloneAccessTest` (camelCase constants, per
+project convention). Complexity warnings on the handler were not addressed.
+
+**Tests.** 33 to 43 (all pass, 88% coverage). `RecordCloneAccessTest` runs real restricted users (Minimum Access
+profile plus permission sets) and checks: a read-only user gets no clone and no copy; a stale summary meets a refused
+insert and reports it by object name on both paths; a user without `Phone` access clones without the phone; the
+settings are readable by a user with no access to the type; a user with no access gets nothing back from either query
+even with an administrator's summary; the name lookup rejects smuggled SOQL. In `RecordCloneTest` the assertions that read
+child lists off the returned record now count the real child rows under the new parent, which is a stronger check.
+
+**Checked by breaking it.** Nine mutations, each caught by a named test: single-record and multi-record queries in
+system mode, insert in system mode, no `TypeException` catch, object-name check removed, settings read in user mode,
+parent inserted with its child lists, Flow null guard removed, all fields copied whether populated or not. Script:
+`ai-logs/mutate.py`, which restores the file byte for byte and redeploys.
+
+**Browser check (scratch org, API 68.0).** As admin: a clean application cloned and navigated to the new record with 4
+requirement responses, 3 question responses all pointing at the clone's requirement responses, 1 award, blank external
+ID; an application on a retired term showed the full reason in the toast and left nothing behind. As a Standard User
+with no access to the settings type: the component loaded the same summary and the clone worked. The temporary clones,
+permission set and user were removed (the user is deactivated; users cannot be deleted). The harness gate
+(`check_clone_harness`) passes.
+
+**Found by a fresh build (2026-11-13).** A new `dev_org` build stopped at `deploy_sample_model`: at API 68.0 each
+component instance on a FlexiPage needs an `<identifier>`, and `Sample_Application_Record_Page` had none ("The
+'c:recordClone' component instance doesn't have an identifier specified"). Deploys to the older dev org never hit it
+because the page was already there. Both instances now have an identifier. After the fix, `cci flow run sample_data`
+completed on the new org (49 applications, no load errors), all 43 tests pass with 88% coverage, and the harness
+gate passes.
+
+**Verified on a clean rebuild (2026-11-13).** A second `dev_org` build from the committed tree ran to the end. The new
+org has 49 sample applications, the armed retired-term scenario, all 43 tests passing at 88% coverage, and a passing
+`check_clone_harness`.
+
+### Interface refresh (updated 2026-11-13)
+
+The three components were rebuilt on SLDS blueprints and base components, with no overrides of `.slds-*` classes and
+no hard-coded colors, spacing or fonts, so they follow the SLDS 1 and SLDS 2 themes. Public properties in
+`js-meta.xml` are unchanged, so existing pages keep working. Screenshots are in `ai-logs/screenshots/`.
+
+**What users see now**
+
+- **Clone form:** a visible label, the name input and a button with an icon on one row. The button wraps beneath the
+  input when the space is narrow (checked at 340px and 260px, no overflow).
+- **While cloning:** the form stays in place, locked, under a spinner. Before, it was replaced by the word "Cloning...".
+- **Not supported:** a notification that names the type and gives the reasons in plain language ("Tasks aren't
+  supported"), where there was a bare "This sObject is not supported."
+- **Details:** folded away behind a one-line "Clone details" toggle, so the tool is small on the page. Opened, it
+  shows three accordion sections (child objects, excluded fields, included fields) with headers at 14px, smaller than
+  the 20px card title. The size and spacing come from the accordion's own styling hooks
+  (`--slds-c-accordion-heading-font-size` and the section spacing hooks), so no SLDS class is overridden. Each section
+  holds a keyboard reachable, labelled, scrollable list, capped at 15rem. Items that will not be cloned say why in a
+  sentence, with the reason code kept as a tooltip. The shared wording lives in `c/recordCloneReasons`.
+- **Configuration helper:** a card with a table of relationship names, a read-only field holding the comma-separated
+  list to copy, and an error notification for an invalid object.
+
+**Footprint, measured on the sample page.** The card was 291px tall, and the collapsed accordion made up 149px of
+that, with section headers the same size as the card title. It is now 169px with the details folded away, 249px with
+the details open and the sections closed, and 493px with one list open (it was 573px before the lists were capped).
+
+**Bugs found and fixed on the way**
+
+- **Inverted label:** a name-input label set by an admin was hidden, and with none set the input had an empty
+  accessible name. That is why the sample page's "New application name" never showed.
+- **Stuck form:** with no record id, the old code set the "cloning" state before checking for the id and never cleared
+  it.
+- **Configurator on non-record pages:** it sent an empty string as the record Id, which Apex rejects
+  ("Value provided is invalid for action parameter 'recordId' of type 'Id'"). It showed "Invalid sObject" on every App,
+  Home, Utility Bar and Flow page, the pages where only the object-name property is offered. This predates the
+  refresh. It now sends `null`.
+- **Reason wording:** one code, `NOT_CREATEABLE`, means "you can't create these records" for an object and "it can't be
+  set on a new record" for a field. The text now depends on which one is being described.
+- `targetRecordId` was a public property that the component reassigned, which was the long-standing ESLint error. It
+  is private now, and ESLint exits clean.
+
+**Checks.** SLDS linter 25 warnings to 0. The analyzer from `design-systems-slds-validate` scores 100 in all four
+categories with no findings on all three components, including the invented-hook check. Jest 19 to 48 tests, ESLint
+clean. Six mutations (inverted label, no default label, form not locked, stuck state, no reasons, empty-string
+Id) are each caught by a test. In the browser: the new bundle, keyboard operation (Tab order, Enter and Space on the
+headers, the list as its own tab stop that scrolls with the arrow keys), narrow widths, the error toast followed by an
+unlocked form, the not-supported state and the configurator.
+
+**Not verified.** SLDS 2 dark mode. Emulating the browser's color scheme does nothing in Salesforce, and this org
+offers no appearance setting under personal settings, so the real theme could not be switched. The styles use only
+utility classes and `--slds-g-*` hooks (with fallbacks), which is what the theme changes, but the dark rendering
+itself has not been seen.
+
+### Code Analyzer cleanup (updated 2026-11-13)
+
+Findings went from 163 to 109 (Critical and High stay at 0). By where they are: production code 72 to 23, the
+sample tools 45 to 31, tests 46 to 55 (the tests grew by 12, and most of the extra findings are the "should use
+`System.runAs`" note on new tests).
+
+**Done, with behavior unchanged**
+
+- ApexDoc on every production class and method (24 findings to 1, the harness).
+- The long `if` chain in `sObjectSummary` is now a lookup table, and the person-account check is three small methods.
+- `RecordCloneHandler` shared its three copies of the child naming, child reading and row preparation. Nested `if`
+  findings 6 to 0.
+- `prefer-const` (7), unused variables (4), a misnamed local, `@isTest` casing, stray `System.debug` calls, and the
+  harness field order.
+- The error-message builder that was copied into two components is one module, `c/recordCloneErrors`.
+- A copy-paste slip in `RecordCloneTest`: it fetched a second summary and then asserted the first one twice. It now
+  checks the second.
+
+**Checks.** 43 to 55 Apex tests, 49 to 54 Jest tests, all passing. Before each refactor, tests that pin the old
+behavior (the reason code of every unsupported object, each child naming format on both paths, children going to the
+right parent, a parent with 205 children) were written and run against the original code. After it, each shared piece
+was broken on purpose and a test failed every time.
+
+**What is left, and why it stays**
+
+- `AvoidGlobalModifier` (2) and `ClassNamingConventions` for `sObjectSummary` (2). `global` is needed by the Flow
+  action and the picklist, and renaming `sObjectSummary` changes a public class that installed orgs and the Aura
+  response depend on.
+- `ExcessiveParameterList` on `execClone` (5 parameters). The Record Clone component calls it by name.
+- Complexity findings on `RecordCloneHandler.cloneRecord` and `cloneRecords`, and on the `sObjectSummary` constructor
+  (14 Cyclomatic, 11 Cognitive, 5 NCSS in all, about half in tests and the harness). They are long because the
+  clone has many steps. Splitting them further would mean changing the order of inserts, which is where the bugs
+  in this ticket came from. The checks above are the safety net if someone wants to try.
+- `FieldNamingConventions` (13). The project convention is camelCase constants (see `AGENTS.md`), which the analyzer
+  reads as wrong. It would be cleaner to turn the rule off in `code-analyzer.yml` than to rename them.
+- `ApexUnitTestClassShouldHaveRunAs` (45). It asks every test to run as another user. Only the access tests need to,
+  and they do.
+- The harness `System.debug` is its report output and stays.
+- Copy-paste notes in Jest tests (7): the arrange step of similar tests.
+
+**Unreachable here.** The fallback in `readChildren` for sub query results of more than 200 rows is dead code on
+API 68.0: a direct read of 450 children works. It is kept as found, because older orgs may have needed it, and the test
+for large child lists says it does not reach it. The person-account branch in `getByRecordId` cannot run in an org
+without person accounts, so only its two parts (the account check and the name field choice) are tested.
+
+**One flaky result.** One scan reported a Critical `UninstantiableEngineError` for the `sfge` engine ("Could not
+locate Java"). It was not repeatable (two reruns were clean, with Java 27 installed), and it ran while a deploy was
+in progress. It is a tooling error, not a code finding.
+
+### Still needs the real org
+
+- Which fields on the real Banner objects to exclude (needs the Enterprise team's list). The mechanism is built; the
+  `ExcludedFieldNames__c` values are configuration.
+- Validation rules, required fields and lookup filters specific to the real Application, Opportunity, Requirement
+  Response, Question Response and Award objects. The sample objects have the same shape, not the same schema.
+- Child objects ignore `ExcludedFieldNames__c` (it applies to the parent only). Not changed; raise it if the real
+  children need field exclusions.
+- ESLint reports an existing `no-api-reassignments` error at `recordClone.js:76`. Not changed.
+- Code Analyzer has no Critical or High findings (see the API 68.0 section above). Moderate, Low and Info findings
+  (complexity, ApexDoc, naming) remain and were not part of the work.

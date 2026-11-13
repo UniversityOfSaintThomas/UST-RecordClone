@@ -4,9 +4,28 @@
   SPDX-License-Identifier: BSD-3-Clause
   For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause 
 */
-.slds-card__header {
-  padding-top: 0.75rem;
+
+/*
+  The name input asks for room before the button wraps beneath it. The shared grid classes are
+  viewport based, and this component is also used in narrow sidebars and utility bars.
+*/
+.c-name-field {
+  flex-basis: var(--slds-g-sizing-14, 15rem);
 }
-.slds-card__footer {
-  padding: 0;
+
+/*
+  The section headers of the details are smaller than the card title, and the sections sit closer
+  together, so that opening the details takes little room. These are the accordion's own styling
+  hooks, so no SLDS class is overridden.
+*/
+.c-details-accordion {
+  --slds-c-accordion-heading-font-size: var(--slds-g-font-scale-1, 0.875rem);
+  --slds-c-accordion-section-spacing-block-start: var(
+    --slds-g-spacing-1,
+    0.25rem
+  );
+  --slds-c-accordion-section-spacing-block-end: var(
+    --slds-g-spacing-1,
+    0.25rem
+  );
 }

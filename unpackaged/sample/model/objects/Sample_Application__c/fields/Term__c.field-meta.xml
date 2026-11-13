@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Term__c</fullName>
+    <label>Term</label>
+    <description
+  >Term the application is for. Lookup filter allows active terms only.</description>
+    <type>Lookup</type>
+    <referenceTo>Sample_Term__c</referenceTo>
+    <relationshipName>Applications</relationshipName>
+    <relationshipLabel>Applications</relationshipLabel>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <required>false</required>
+    <externalId>false</externalId>
+    <lookupFilter>
+        <active>true</active>
+        <errorMessage>The term must be active.</errorMessage>
+        <filterItems>
+            <field>Sample_Term__c.Is_Active__c</field>
+            <operation>equals</operation>
+            <value>True</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+</CustomField>

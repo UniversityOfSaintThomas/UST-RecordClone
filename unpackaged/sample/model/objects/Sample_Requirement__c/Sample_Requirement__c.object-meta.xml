@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description
+  >Sample data only. Shared definition record that responses point at. Not a child of an application.</description>
+    <label>Sample Requirement</label>
+    <nameField>
+        <label>Sample Requirement Name</label>
+        <type>Text</type>
+    </nameField>
+    <pluralLabel>Sample Requirements</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+</CustomObject>
