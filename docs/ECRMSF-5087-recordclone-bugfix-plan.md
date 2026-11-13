@@ -298,8 +298,15 @@ with no access to the settings type: the component loaded the same summary and t
 permission set and user were removed (the user is deactivated; users cannot be deleted). The harness gate
 (`check_clone_harness`) passes.
 
-**Not verified.** A fresh scratch org built with `dev_org` on the new versions. The existing dev org was updated in
-place, so deploy order on a new build is untested.
+**Found by a fresh build (2026-11-13).** A new `dev_org` build stopped at `deploy_sample_model`: at API 68.0 each
+component instance on a FlexiPage needs an `<identifier>`, and `Sample_Application_Record_Page` had none ("The
+'c:recordClone' component instance doesn't have an identifier specified"). Deploys to the older dev org never hit it
+because the page was already there. Both instances now have an identifier. After the fix, `cci flow run sample_data`
+completed on the new org (49 applications, no load errors), all 43 tests pass with 88% coverage, and the harness
+gate passes.
+
+**Not verified.** One uninterrupted `dev_org` build with the fix in place. The fix was checked with a validate-only
+deploy and by running the remaining steps through `sample_data`, which uses the same tasks.
 
 ### Still needs the real org
 

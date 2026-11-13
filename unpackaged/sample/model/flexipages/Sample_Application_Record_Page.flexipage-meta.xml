@@ -4,6 +4,7 @@
         <itemInstances>
             <componentInstance>
                 <componentName>force:detailPanel</componentName>
+                <identifier>force_detailPanel</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
@@ -38,6 +39,7 @@
                     <value>true</value>
                 </componentInstanceProperties>
                 <componentName>c:recordClone</componentName>
+                <identifier>c_recordClone</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>

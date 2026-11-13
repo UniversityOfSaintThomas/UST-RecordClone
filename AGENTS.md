@@ -121,6 +121,8 @@ original, wrong child counts). The data is never changed.
 - `cci task run deploy --path` needs a folder, not a single file. Use `sf project deploy start --source-dir <file>` for
   one class.
 - Apex is case-insensitive: a parameter named `accountAccess` shadows an enum named `AccountAccess`.
+- At API 68.0 every `componentInstance` in a FlexiPage needs an `<identifier>`. A page that is already in an old org
+  can deploy without one, and the same page fails on a fresh build.
 - `cci org info` prints the scratch org password. Never copy that output into a file or a message.
 - The sample permission set `Sample_Data_Access` is required for field access; without it describe results look empty.
 - `get_file_problems` (IDE MCP) cannot resolve Apex built-ins in this project, so it reports noise on every class.
