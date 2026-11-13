@@ -31,6 +31,8 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
   objectName;
   isInitialized = false;
   isCloning = false;
+  // The details are folded away until the user asks for them, to keep the component small on the page.
+  detailsExpanded = false;
   shouldShowChildren = false;
   shouldShowExcludedFields = false;
   shouldShowIncludedFields = false;
@@ -292,6 +294,20 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
 
   get hasNotClonableReasons() {
     return this.notClonableReasons.length > 0;
+  }
+
+  toggleDetails = () => {
+    this.detailsExpanded = !this.detailsExpanded;
+  };
+
+  get detailsIconName() {
+    return this.detailsExpanded
+      ? "utility:chevrondown"
+      : "utility:chevronright";
+  }
+
+  get detailsAriaExpanded() {
+    return this.detailsExpanded ? "true" : "false";
   }
 
   get hasChildItems() {

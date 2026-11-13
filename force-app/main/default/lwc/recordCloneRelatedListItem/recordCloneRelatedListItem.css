@@ -9,5 +9,5 @@
   A long list scrolls in place instead of pushing the page down.
 */
 .c-detail-list {
-  max-height: var(--slds-g-sizing-15, 20rem);
+  max-height: var(--slds-g-sizing-14, 15rem);
 }

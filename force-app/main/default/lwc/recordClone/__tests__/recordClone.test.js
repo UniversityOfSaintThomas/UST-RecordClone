@@ -56,6 +56,12 @@ const getSObjectSummaryAdapter = registerApexTestWireAdapter(getSObjectSummary);
 const flushPromises = () =>
   [1, 2, 3, 4, 5].reduce((chain) => chain.then(() => {}), Promise.resolve());
 
+// The toggle that folds the details away.
+const detailsToggle = (element) =>
+  Array.from(element.shadowRoot.querySelectorAll("lightning-button")).find(
+    (button) => button.label === "Clone details"
+  );
+
 // The spinner that is on screen, by its accessible name.
 const spinnerNamed = (element, name) =>
   Array.from(element.shadowRoot.querySelectorAll("lightning-spinner")).find(
@@ -538,7 +544,7 @@ describe("c-record-clone", () => {
       });
   });
 
-  it("lists the details in accordion sections when details are shown", () => {
+  it("folds the details away until the user asks for them", () => {
     const element = createElement("c-record-clone", {
       is: RecordClone
     });
@@ -547,28 +553,79 @@ describe("c-record-clone", () => {
     getNameFieldValueAdapter.emit("Test Record Name");
     getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
 
-    return Promise.resolve().then(() => {
-      const accordion = element.shadowRoot.querySelector("lightning-accordion");
-      expect(accordion).not.toBeNull();
-      expect(accordion.allowMultipleSectionsOpen).toBe(true);
+    return Promise.resolve()
+      .then(() => {
+        // one line, a toggle, and nothing else, so the component stays small on the page
+        const toggle = Array.from(
+          element.shadowRoot.querySelectorAll("lightning-button")
+        ).find((button) => button.label === "Clone details");
+        expect(toggle).toBeTruthy();
+        expect(toggle.ariaExpanded).toBe("false");
+        expect(toggle.iconName).toBe("utility:chevronright");
+        expect(
+          element.shadowRoot.querySelector("lightning-accordion")
+        ).toBeNull();
+        expect(
+          element.shadowRoot.querySelector("c-record-clone-related-list-item")
+        ).toBeNull();
+      })
+      .then(() => {
+        detailsToggle(element).click();
+      })
+      .then(() => {
+        expect(detailsToggle(element).ariaExpanded).toBe("true");
+        expect(detailsToggle(element).iconName).toBe("utility:chevrondown");
+        expect(
+          element.shadowRoot.querySelector("lightning-accordion")
+        ).not.toBeNull();
 
-      const sections = Array.from(
-        element.shadowRoot.querySelectorAll("lightning-accordion-section")
-      );
-      expect(sections.map((section) => section.label)).toEqual([
-        "Included child objects (1)",
-        expect.stringMatching(/^Excluded fields \(\d+\)$/),
-        expect.stringMatching(/^Included fields \(\d+\)$/)
-      ]);
+        detailsToggle(element).click();
+      })
+      .then(() => {
+        expect(detailsToggle(element).ariaExpanded).toBe("false");
+        expect(
+          element.shadowRoot.querySelector("lightning-accordion")
+        ).toBeNull();
+      });
+  });
 
-      // every section holds one list, handed its items and a name for assistive technology
-      const lists = element.shadowRoot.querySelectorAll(
-        "c-record-clone-related-list-item"
-      );
-      expect(lists).toHaveLength(3);
-      expect(lists[0].title).toBe("Included child objects (1)");
-      expect(lists[0].okItems).toHaveLength(1);
+  it("lists the details in accordion sections once they are opened", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
     });
+    document.body.appendChild(element);
+    element.showDetails = true;
+    getNameFieldValueAdapter.emit("Test Record Name");
+    getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
+
+    return Promise.resolve()
+      .then(() => {
+        detailsToggle(element).click();
+      })
+      .then(() => {
+        const accordion = element.shadowRoot.querySelector(
+          "lightning-accordion"
+        );
+        expect(accordion).not.toBeNull();
+        expect(accordion.allowMultipleSectionsOpen).toBe(true);
+
+        const sections = Array.from(
+          element.shadowRoot.querySelectorAll("lightning-accordion-section")
+        );
+        expect(sections.map((section) => section.label)).toEqual([
+          "Included child objects (1)",
+          expect.stringMatching(/^Excluded fields \(\d+\)$/),
+          expect.stringMatching(/^Included fields \(\d+\)$/)
+        ]);
+
+        // every section holds one list, handed its items and a name for assistive technology
+        const lists = element.shadowRoot.querySelectorAll(
+          "c-record-clone-related-list-item"
+        );
+        expect(lists).toHaveLength(3);
+        expect(lists[0].title).toBe("Included child objects (1)");
+        expect(lists[0].okItems).toHaveLength(1);
+      });
   });
 
   it("does not render the details unless asked to", () => {

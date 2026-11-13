@@ -322,11 +322,18 @@ no hard-coded colors, spacing or fonts, so they follow the SLDS 1 and SLDS 2 the
 - **While cloning:** the form stays in place, locked, under a spinner. Before, it was replaced by the word "Cloning...".
 - **Not supported:** a notification that names the type and gives the reasons in plain language ("Tasks aren't
   supported"), where there was a bare "This sObject is not supported."
-- **Details:** three accordion sections (child objects, excluded fields, included fields). Each holds a keyboard
-  reachable, labelled, scrollable list. Items that will not be cloned say why in a sentence, with the reason code kept
-  as a tooltip. The shared wording lives in `c/recordCloneReasons`.
+- **Details:** folded away behind a one-line "Clone details" toggle, so the tool is small on the page. Opened, it
+  shows three accordion sections (child objects, excluded fields, included fields) with headers at 14px, smaller than
+  the 20px card title. The size and spacing come from the accordion's own styling hooks
+  (`--slds-c-accordion-heading-font-size` and the section spacing hooks), so no SLDS class is overridden. Each section
+  holds a keyboard reachable, labelled, scrollable list, capped at 15rem. Items that will not be cloned say why in a
+  sentence, with the reason code kept as a tooltip. The shared wording lives in `c/recordCloneReasons`.
 - **Configuration helper:** a card with a table of relationship names, a read-only field holding the comma-separated
   list to copy, and an error notification for an invalid object.
+
+**Footprint, measured on the sample page.** The card was 291px tall, and the collapsed accordion made up 149px of
+that, with section headers the same size as the card title. It is now 169px with the details folded away, 249px with
+the details open and the sections closed, and 493px with one list open (it was 573px before the lists were capped).
 
 **Bugs found and fixed on the way**
 

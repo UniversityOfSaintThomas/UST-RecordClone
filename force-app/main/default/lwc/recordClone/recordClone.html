@@ -113,8 +113,20 @@
 
       <!-- [Option] a user can see which children and fields are bundled. -->
       <template if:true={showDetails}>
-        <div class="slds-m-top_medium slds-border_top">
-          <lightning-accordion allow-multiple-sections-open>
+        <div class="slds-m-top_small">
+          <lightning-button
+            variant="base"
+            label="Clone details"
+            icon-name={detailsIconName}
+            aria-expanded={detailsAriaExpanded}
+            onclick={toggleDetails}
+          ></lightning-button>
+        </div>
+        <template if:true={detailsExpanded}>
+          <lightning-accordion
+            class="c-details-accordion"
+            allow-multiple-sections-open
+          >
             <!-- list of child objects that will be cloned together -->
             <template if:true={hasChildItems}>
               <lightning-accordion-section
@@ -158,7 +170,7 @@
               </lightning-accordion-section>
             </template>
           </lightning-accordion>
-        </div>
+        </template>
       </template>
     </div>
   </article>
