@@ -100,6 +100,104 @@ private class sObjectSummaryTest {
   }
 
   @IsTest
+  private static void everyUnsupportedObjectReportsItsOwnReason() {
+    // The reason code is what the interface turns into a sentence, so each object must keep its own.
+    Map<String, String> expectedReason = new Map<String, String>{
+      'Task' => 'IS_TASK',
+      'Event' => 'IS_EVENT',
+      'Attachment' => 'IS_ATTACHMENT',
+      'Document' => 'IS_DOCUMENT',
+      'QuoteDocument' => 'IS_QUOTE_DOCUMENT',
+      'ContentDocumentLink' => 'IS_CONTENT_DOCUMENT_LINK',
+      'Partner' => 'IS_PARTNER',
+      'AccountPartner' => 'IS_ACCOUNT_PARTNER',
+      'OpportunityPartner' => 'IS_OPPORTUNITY_PARTNER',
+      'AccountShare' => 'IS_SHARE_OBJECT',
+      'NetworkUserHistoryRecent' => 'IS_COMMUNITY_RELATED_RESTRICTION'
+    };
+
+    Map<String, Schema.SObjectType> objectTypes = Schema.getGlobalDescribe();
+    Integer checked = 0;
+    for (String objectName : expectedReason.keySet()) {
+      Schema.SObjectType objectType = objectTypes.get(objectName);
+      if (objectType == null) {
+        // not every org has every object, for example quotes may be switched off
+        continue;
+      }
+      sObjectSummary summary = new sObjectSummary(
+        objectType.getDescribe(SObjectDescribeOptions.DEFERRED)
+      );
+      Assert.isFalse(
+        summary.isClonable,
+        objectName + ' should not be clonable'
+      );
+      Assert.isTrue(
+        new Set<String>(summary.errorMessage.split(','))
+          .contains(expectedReason.get(objectName)),
+        objectName +
+        ' should report ' +
+        expectedReason.get(objectName) +
+        ' but reported: ' +
+        summary.errorMessage
+      );
+      checked++;
+    }
+    Assert.isTrue(
+      checked >= 8,
+      'Only ' +
+      checked +
+      ' objects could be checked'
+    );
+  }
+
+  @IsTest
+  private static void personAccountCheckMatchesWhatTheOrgSupports() {
+    Account business = new Account(Name = 'Business Account');
+    insert business;
+
+    if (sObjectSummary.hasPersonAccounts()) {
+      Assert.areEqual(
+        false,
+        sObjectSummary.isPersonAccount(business.Id),
+        'A business account is not a person account'
+      );
+      Assert.areEqual(
+        'Name',
+        sObjectSummary.getByRecordId(business.Id).nameField,
+        'A business account is named by Name'
+      );
+    } else {
+      // Without person accounts there is no IsPersonAccount field to ask about. The answer is
+      // "unknown", and the summary still has to be built from the ordinary name field.
+      Assert.isNull(sObjectSummary.isPersonAccount(business.Id));
+      Assert.areEqual(
+        'Name',
+        sObjectSummary.getByRecordId(business.Id).nameField
+      );
+    }
+    Assert.isNull(
+      sObjectSummary.getByRecordId(null),
+      'No record Id gives no summary'
+    );
+  }
+
+  @IsTest
+  private static void personAccountsAreNamedByLastNameAndBusinessAccountsByName() {
+    // Person accounts cannot be switched on here, so the choice is tested on its own.
+    Assert.areEqual('LastName', sObjectSummary.nameFieldOfAccount(true));
+    Assert.areEqual('Name', sObjectSummary.nameFieldOfAccount(false));
+  }
+
+  @IsTest
+  private static void aSupportedObjectReportsNoReason() {
+    sObjectSummary summary = new sObjectSummary(
+      Account.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)
+    );
+    Assert.isTrue(summary.isClonable);
+    Assert.areEqual('', summary.errorMessage);
+  }
+
+  @IsTest
   private static void exceptionalFields() {
     sObjectSummary caseObj = new sObjectSummary(
       Case.sObjectType.getDescribe(SObjectDescribeOptions.DEFERRED)

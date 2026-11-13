@@ -17,9 +17,6 @@
  * Findings are data-quality problems on clones that did succeed; they are reported, not failed.
  */
 public with sharing class RecordCloneHarness {
-  public class HarnessException extends Exception {
-  }
-
   private static final String standardChildren = 'Requirement_Responses__r,Question_Responses__r,Awards__r,Opportunities__r';
   private static final String withAuditChildren =
     standardChildren + ',Audit_Entries__r';
@@ -31,6 +28,16 @@ public with sharing class RecordCloneHarness {
 
   // Stop before the 100 query limit so a case is never cut off halfway
   private static final Integer queryBudget = 70;
+
+  @TestVisible
+  private static List<String> mismatches = new List<String>();
+  @TestVisible
+  private static Map<String, Integer> findingTotals = new Map<String, Integer>();
+  @TestVisible
+  private static Integer matched = 0;
+
+  public class HarnessException extends Exception {
+  }
 
   private static void stoppedEarly(String nextKey) {
     mismatches.add(
@@ -72,13 +79,6 @@ public with sharing class RecordCloneHarness {
       this.expectedReason = expectedReason;
     }
   }
-
-  @TestVisible
-  private static List<String> mismatches = new List<String>();
-  @TestVisible
-  private static Map<String, Integer> findingTotals = new Map<String, Integer>();
-  @TestVisible
-  private static Integer matched = 0;
 
   /**
    * Runs the harness.

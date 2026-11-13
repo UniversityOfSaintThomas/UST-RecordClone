@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-@isTest
+@IsTest
 private class RecordCloneTest {
   @IsTest
   private static void picklistTest() {
@@ -50,11 +50,11 @@ private class RecordCloneTest {
       null,
       null
     );
-    System.assertNotEquals(noNoSummary1, null);
-    System.assertEquals(noNoSummary1.isClonable, true);
-    System.assertEquals(noNoSummary1.children, null);
-    System.assertNotEquals(noNoSummary1.fields, null);
-    System.assertNotEquals(noNoSummary1.fields.size(), 0);
+    System.assertNotEquals(noNoSummary2, null);
+    System.assertEquals(noNoSummary2.isClonable, true);
+    System.assertEquals(noNoSummary2.children, null);
+    System.assertNotEquals(noNoSummary2.fields, null);
+    System.assertNotEquals(noNoSummary2.fields.size(), 0);
 
     // with relationship, without excludedFields
     sObjectSummary yesNoSummary1 = RecordCloneController.getSObjectSummary(
@@ -337,7 +337,6 @@ private class RecordCloneTest {
     );
     System.assertNotEquals(yesNoNoCloned2, null);
     System.assertNotEquals(yesNoNoCloned2.Id, null);
-    System.debug(yesNoNoCloned2);
 
     // with relationship, without excludedFields
     sObject noYesNoCloned1 = RecordCloneController.execClone(

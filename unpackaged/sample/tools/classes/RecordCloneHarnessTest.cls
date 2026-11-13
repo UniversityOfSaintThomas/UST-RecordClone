@@ -177,22 +177,22 @@ private class RecordCloneHarnessTest {
 
   @IsTest
   private static void partOneSingleRecordCases() {
-    assertCleanRun('part=1', 4);
+    Assert.areEqual(4, runCleanly('part=1'), 'Scenarios that matched');
   }
 
   @IsTest
   private static void partTwoSingleRecordCases() {
-    assertCleanRun('part=2', 4);
+    Assert.areEqual(4, runCleanly('part=2'), 'Scenarios that matched');
   }
 
   @IsTest
   private static void partThreeSingleRecordCases() {
-    assertCleanRun('part=3', 5);
+    Assert.areEqual(5, runCleanly('part=3'), 'Scenarios that matched');
   }
 
   @IsTest
   private static void partFourMultiRecordCases() {
-    assertCleanRun('part=4', 3);
+    Assert.areEqual(3, runCleanly('part=4'), 'Scenarios that matched');
   }
 
   @IsTest
@@ -206,7 +206,14 @@ private class RecordCloneHarnessTest {
     }
   }
 
-  private static void assertCleanRun(String options, Integer expectedMatches) {
+  /**
+   * Runs one part of the harness and checks that every scenario came out as expected and that no
+   * clone lost data quality. The number of scenarios that matched is returned for the test to check.
+   *
+   * @param options The options passed to RecordCloneHarness.run
+   * @return How many scenarios matched their expected outcome
+   */
+  private static Integer runCleanly(String options) {
     RecordCloneHarness.run(options);
     Assert.areEqual(
       0,
@@ -214,10 +221,10 @@ private class RecordCloneHarnessTest {
       'Unexpected outcomes: ' +
       String.join(RecordCloneHarness.mismatches, ' || ')
     );
-    Assert.areEqual(expectedMatches, RecordCloneHarness.matched);
     Assert.isTrue(
       RecordCloneHarness.findingTotals.isEmpty(),
       'A clone lost data quality: ' + RecordCloneHarness.findingTotals
     );
+    return RecordCloneHarness.matched;
   }
 }

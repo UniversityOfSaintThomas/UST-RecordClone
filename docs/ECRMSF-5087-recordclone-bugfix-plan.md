@@ -362,6 +362,55 @@ offers no appearance setting under personal settings, so the real theme could no
 utility classes and `--slds-g-*` hooks (with fallbacks), which is what the theme changes, but the dark rendering
 itself has not been seen.
 
+### Code Analyzer cleanup (updated 2026-11-13)
+
+Findings went from 163 to 109 (Critical and High stay at 0). By where they are: production code 72 to 23, the
+sample tools 45 to 31, tests 46 to 55 (the tests grew by 12, and most of the extra findings are the "should use
+`System.runAs`" note on new tests).
+
+**Done, with behavior unchanged**
+
+- ApexDoc on every production class and method (24 findings to 1, the harness).
+- The long `if` chain in `sObjectSummary` is now a lookup table, and the person-account check is three small methods.
+- `RecordCloneHandler` shared its three copies of the child naming, child reading and row preparation. Nested `if`
+  findings 6 to 0.
+- `prefer-const` (7), unused variables (4), a misnamed local, `@isTest` casing, stray `System.debug` calls, and the
+  harness field order.
+- The error-message builder that was copied into two components is one module, `c/recordCloneErrors`.
+- A copy-paste slip in `RecordCloneTest`: it fetched a second summary and then asserted the first one twice. It now
+  checks the second.
+
+**Checks.** 43 to 55 Apex tests, 49 to 54 Jest tests, all passing. Before each refactor, tests that pin the old
+behavior (the reason code of every unsupported object, each child naming format on both paths, children going to the
+right parent, a parent with 205 children) were written and run against the original code. After it, each shared piece
+was broken on purpose and a test failed every time.
+
+**What is left, and why it stays**
+
+- `AvoidGlobalModifier` (2) and `ClassNamingConventions` for `sObjectSummary` (2). `global` is needed by the Flow
+  action and the picklist, and renaming `sObjectSummary` changes a public class that installed orgs and the Aura
+  response depend on.
+- `ExcessiveParameterList` on `execClone` (5 parameters). The Record Clone component calls it by name.
+- Complexity findings on `RecordCloneHandler.cloneRecord` and `cloneRecords`, and on the `sObjectSummary` constructor
+  (14 Cyclomatic, 11 Cognitive, 5 NCSS in all, about half in tests and the harness). They are long because the
+  clone has many steps. Splitting them further would mean changing the order of inserts, which is where the bugs
+  in this ticket came from. The checks above are the safety net if someone wants to try.
+- `FieldNamingConventions` (13). The project convention is camelCase constants (see `AGENTS.md`), which the analyzer
+  reads as wrong. It would be cleaner to turn the rule off in `code-analyzer.yml` than to rename them.
+- `ApexUnitTestClassShouldHaveRunAs` (45). It asks every test to run as another user. Only the access tests need to,
+  and they do.
+- The harness `System.debug` is its report output and stays.
+- Copy-paste notes in Jest tests (7): the arrange step of similar tests.
+
+**Unreachable here.** The fallback in `readChildren` for sub query results of more than 200 rows is dead code on
+API 68.0: a direct read of 450 children works. It is kept as found, because older orgs may have needed it, and the test
+for large child lists says it does not reach it. The person-account branch in `getByRecordId` cannot run in an org
+without person accounts, so only its two parts (the account check and the name field choice) are tested.
+
+**One flaky result.** One scan reported a Critical `UninstantiableEngineError` for the `sfge` engine ("Could not
+locate Java"). It was not repeatable (two reruns were clean, with Java 27 installed), and it ran while a deploy was
+in progress. It is a tooling error, not a code finding.
+
 ### Still needs the real org
 
 - Which fields on the real Banner objects to exclude (needs the Enterprise team's list). The mechanism is built; the

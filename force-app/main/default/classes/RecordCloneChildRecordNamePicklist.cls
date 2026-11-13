@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
+/**
+ * The choices offered for how child records are named when a record is cloned: keep the original
+ * name, prefix it with "Cloned - ", or prefix it and add the time. Used by the App Builder property
+ * editor for the Record Clone component, and as the stored values of the clone settings.
+ */
 global with sharing class RecordCloneChildRecordNamePicklist extends VisualEditor.DynamicPickList {
   public static String labelOriginalName = '[Child Record Name]';
   public static String labelWithCloned = 'Cloned - [Child Record Name]';

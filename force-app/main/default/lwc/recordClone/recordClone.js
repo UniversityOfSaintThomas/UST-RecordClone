@@ -11,6 +11,7 @@ import execClone from "@salesforce/apex/RecordCloneController.execClone";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { NavigationMixin } from "lightning/navigation";
 import { describeReasons } from "c/recordCloneReasons";
+import { buildErrorMessage } from "c/recordCloneErrors";
 
 export default class RecordClone extends NavigationMixin(LightningElement) {
   @api recordId;
@@ -92,7 +93,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     const clonableFields = [];
     const notClonableFields = [];
     if (sObjectSummary.fields && sObjectSummary.fields.length > 0) {
-      for (let field of sObjectSummary.fields) {
+      for (const field of sObjectSummary.fields) {
         if (field.isClonable) {
           clonableFields.push(field);
         } else {
@@ -103,7 +104,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     const clonableChildren = [];
     const notClonableChildren = [];
     if (sObjectSummary.children && sObjectSummary.children.length > 0) {
-      for (let child of sObjectSummary.children) {
+      for (const child of sObjectSummary.children) {
         if (child.isClonable) {
           clonableChildren.push(child);
         } else {
@@ -137,34 +138,15 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     return { ...sObjectSummary, children: children };
   }
 
-  buildErrorMessage = (errors) => {
-    let errorMessage = "";
-    if (Array.isArray(errors)) {
-      errors.forEach((err) => {
-        errorMessage += `[${err.statusCode}] ${err.message}\n`;
-      });
-    } else if (errors instanceof Object) {
-      for (let key in errors) {
-        if (Object.prototype.hasOwnProperty.call(errors, key)) {
-          const errs = errors[key];
-          for (let err of errs) {
-            errorMessage += `${key} - [${err.statusCode}] ${err.message}\n`;
-          }
-        }
-      }
-    }
-    return errorMessage;
-  };
-
   handleErrors = (errors) => {
     console.log(errors);
     let errorMessage = "";
     if (errors && errors.body) {
       if (errors.body.fieldErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.fieldErrors);
+        errorMessage += buildErrorMessage(errors.body.fieldErrors);
       }
       if (errors.body.pageErrors) {
-        errorMessage += this.buildErrorMessage(errors.body.pageErrors);
+        errorMessage += buildErrorMessage(errors.body.pageErrors);
       }
       // Apex exceptions (AuraHandledException) put their text in body.message
       if (!errorMessage && typeof errors.body.message === "string") {

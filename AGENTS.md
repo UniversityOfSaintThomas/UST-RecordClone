@@ -151,8 +151,11 @@ original, wrong child counts). The data is never changed.
 ## Known issues (not fixed)
 
 - ESLint reports `@lwc/lwc/no-api-reassignments` at `recordClone.js:76` (present before this work).
-- Code Analyzer has no Critical or High findings. The Moderate, Low and Info findings (complexity, ApexDoc, naming) are
-  unchanged apart from the new test class, and were not part of the work.
+- Code Analyzer has no Critical or High findings. The Moderate, Low and Info findings that remain are listed, with the
+  reason each stays, in the plan doc ("Code Analyzer cleanup"). `RecordCloneHandler`, `sObjectSummary` and the
+  controller are the only production code with any left.
+- One scan can report a Critical `UninstantiableEngineError` for `sfge` ("Could not locate Java") while a deploy is
+  running. Rerun it; it is a tooling error, not a finding.
 - Children ignore `ExcludedFieldNames__c`.
 - On the multi-record path the Opportunity contact-role cleanup checks `isDeletable` of the parent (Opportunity), not of
   the contact role. The single-record path checks the child. Not changed.

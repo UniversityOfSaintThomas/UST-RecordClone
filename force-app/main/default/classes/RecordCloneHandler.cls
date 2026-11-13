@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
+/**
+ * Does the work of a clone: reads the original records, inserts the copies, then the copies of their
+ * children, pointing each child at its new parent. Everything runs in user mode, so the running
+ * user's sharing, object permissions and field-level security apply.
+ */
 public with sharing class RecordCloneHandler {
   /**
    * Raised when a clone cannot complete. The message names the object that
@@ -21,6 +26,10 @@ public with sharing class RecordCloneHandler {
     private List<sObject> rows = new List<sObject>();
     private List<Id> originalIds = new List<Id>();
     private List<String> siblingFields = new List<String>();
+    // How the children are named: one of the RecordCloneChildRecordNamePicklist values, and the
+    // time of the clone, already formatted
+    private String nameFormat;
+    private String timestamp;
   }
 
   /**
@@ -33,6 +42,13 @@ public with sharing class RecordCloneHandler {
     private Id originalSiblingId;
   }
 
+  /**
+   * Reads one record with the fields and children a clone needs.
+   *
+   * @param recordId The Id of the record to read
+   * @param sObjSummary Says which fields and which children can be cloned
+   * @return The record with its children, or null when it cannot be read, or an input is missing
+   */
   // single records
   public static sObject getOriginalRecord(
     Id recordId,
@@ -64,6 +80,13 @@ public with sharing class RecordCloneHandler {
     }
   }
 
+  /**
+   * Reads several records of one object with the fields and children a clone needs.
+   *
+   * @param recordIds The Ids of the records to read
+   * @param sObjSummary Says which fields and which children can be cloned
+   * @return The records with their children, or null when they cannot be read, or an input is missing
+   */
   // multiple records
   public static List<sObject> getOriginalRecords(
     List<Id> recordIds,
@@ -92,6 +115,17 @@ public with sharing class RecordCloneHandler {
     }
   }
 
+  /**
+   * Clones one record and its children. The record is named by the caller; its children keep their
+   * names or are renamed by the chosen format.
+   *
+   * @param original The record to clone, as read by getOriginalRecord
+   * @param sObjectSummary Says which fields and children can be cloned and how the object is named
+   * @param newRecordName The name for the new record, used when the object has a name field
+   * @param childRecordNameType How child records are named: one of the RecordCloneChildRecordNamePicklist values
+   * @return The new record, with its Id
+   * @throws RecordCloneException When an insert fails; the message names the object and the reason
+   */
   public static sObject cloneRecord(
     sObject original,
     sObjectSummary sObjectSummary,
@@ -127,26 +161,7 @@ public with sharing class RecordCloneHandler {
           continue;
         }
 
-        List<sObject> children;
-        try {
-          try {
-            // System.QueryException: Aggregate query has too many rows for direct assignment, use FOR loop
-            // https://www.kineticgrowth.com/system-queryexception-aggregate-query-many-rows-direct-assignment-use-loop/
-            // https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_loops_for_SOQL.htm
-            // There are weird cases.
-            // https://developer.salesforce.com/forums/?id=906F0000000AtTyIAK
-            children = original.getSObjects(childRelName);
-          } catch (System.QueryException qe) {
-            System.debug('QueryException. Now try using for loop.');
-            children = new List<sObject>();
-            for (sObject child : original.getSObjects(childRelName)) {
-              children.add(child);
-            }
-          }
-        } catch (System.SObjectException e) {
-          System.debug('SObjectException');
-          continue;
-        }
+        List<sObject> children = readChildren(original, childRelName);
         if (children == null || children.size() == 0) {
           continue;
         }
@@ -163,37 +178,103 @@ public with sharing class RecordCloneHandler {
 
         ChildBatch batch = new ChildBatch();
         batch.summary = childSummary;
-        for (Integer i = 0; i < children.size(); i++) {
-          batch.originalIds.add(children[i].Id);
-          children[i].put('Id', null);
-          if (childSummary.isNamable) {
-            String originalRecordName = (String) children[i]
-              .get(childSummary.nameField);
-            String nameValue = originalRecordName;
-
-            if (
-              childRecordNameType ==
-              RecordCloneChildRecordNamePicklist.valueWithCloned
-            ) {
-              nameValue = 'Cloned - ' + originalRecordName;
-            } else if (
-              childRecordNameType ==
-              RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
-            ) {
-              nameValue = 'Cloned - ' + originalRecordName + ' - ' + todayStr;
-            }
-            children[i].put(childSummary.nameField, nameValue);
-          }
-
-          children[i].put(childSummary.parentRelationshipField, cloned.Id);
-        }
-        batch.rows = children;
+        batch.nameFormat = childRecordNameType;
+        batch.timestamp = todayStr;
+        addPreparedChildren(batch, children, cloned.Id);
         batches.add(batch);
       }
       insertChildBatches(batches);
     }
 
     return cloned;
+  }
+
+  /**
+   * The name a cloned record gets under the chosen format: unchanged, prefixed with "Cloned - ", or
+   * prefixed and followed by the time of the clone.
+   *
+   * @param originalName The name of the record being cloned
+   * @param nameFormat One of the RecordCloneChildRecordNamePicklist values; anything else keeps the name
+   * @param timestamp The time of the clone, already formatted
+   * @return The name for the new record
+   */
+  private static String clonedName(
+    String originalName,
+    String nameFormat,
+    String timestamp
+  ) {
+    if (nameFormat == RecordCloneChildRecordNamePicklist.valueWithCloned) {
+      return 'Cloned - ' + originalName;
+    }
+    if (
+      nameFormat == RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
+    ) {
+      return 'Cloned - ' + originalName + ' - ' + timestamp;
+    }
+    return originalName;
+  }
+
+  /**
+   * Reads the children of one relationship from a queried record.
+   *
+   * @param parent The queried record
+   * @param relationshipName The child relationship name, as used in the sub query
+   * @return The children, or null when the record has no such relationship loaded
+   */
+  private static List<sObject> readChildren(
+    sObject parent,
+    String relationshipName
+  ) {
+    try {
+      try {
+        // System.QueryException: Aggregate query has too many rows for direct assignment, use FOR loop
+        // https://www.kineticgrowth.com/system-queryexception-aggregate-query-many-rows-direct-assignment-use-loop/
+        // https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_loops_for_SOQL.htm
+        // There are weird cases.
+        // https://developer.salesforce.com/forums/?id=906F0000000AtTyIAK
+        return parent.getSObjects(relationshipName);
+      } catch (System.QueryException ignored) {
+        List<sObject> children = new List<sObject>();
+        for (sObject child : parent.getSObjects(relationshipName)) {
+          children.add(child);
+        }
+        return children;
+      }
+    } catch (System.SObjectException ignored) {
+      return null;
+    }
+  }
+
+  /**
+   * Turns queried children into rows to insert: remembers each original Id, clears it, names the
+   * copy, and points it at the new parent. The rows are added to the batch.
+   *
+   * @param batch The batch the rows belong to; it says how the children are named and linked
+   * @param children The queried children of one parent
+   * @param newParentId The Id of the cloned parent
+   */
+  private static void addPreparedChildren(
+    ChildBatch batch,
+    List<sObject> children,
+    Id newParentId
+  ) {
+    sObjectSummary childSummary = batch.summary;
+    for (sObject child : children) {
+      batch.originalIds.add(child.Id);
+      child.put('Id', null);
+      if (childSummary.isNamable) {
+        child.put(
+          childSummary.nameField,
+          clonedName(
+            (String) child.get(childSummary.nameField),
+            batch.nameFormat,
+            batch.timestamp
+          )
+        );
+      }
+      child.put(childSummary.parentRelationshipField, newParentId);
+    }
+    batch.rows.addAll(children);
   }
 
   /**
@@ -549,6 +630,15 @@ public with sharing class RecordCloneHandler {
     return childrenSelect;
   }
 
+  /**
+   * Clones several records and their children, in bulk. Names of the new records and of their children
+   * follow the format stored in the summary.
+   *
+   * @param originals The records to clone, as read by getOriginalRecords
+   * @param sObjectSummary Says which fields and children can be cloned, and the name format
+   * @return The new records, in the same order as the originals
+   * @throws RecordCloneException When an insert fails; the message names the object and the reason
+   */
   public static List<sObject> cloneRecords(
     List<sObject> originals,
     sObjectSummary sObjectSummary
@@ -564,22 +654,14 @@ public with sharing class RecordCloneHandler {
       if (sObjectSummary.isNamable) {
         // Parent record name
         // use sObject parentRecordNameFormat or specify custom record name inputted by user.
-        String originalRecordName = (String) original.get(
-          sObjectSummary.nameField
+        cloning.put(
+          sObjectSummary.nameField,
+          clonedName(
+            (String) original.get(sObjectSummary.nameField),
+            sObjectSummary.childRecordNameFormat,
+            todayStr
+          )
         );
-        String nameValue = originalRecordName;
-        if (
-          sObjectSummary.childRecordNameFormat ==
-          RecordCloneChildRecordNamePicklist.valueWithCloned
-        ) {
-          nameValue = 'Cloned - ' + originalRecordName;
-        } else if (
-          sObjectSummary.childRecordNameFormat ==
-          RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
-        ) {
-          nameValue = 'Cloned - ' + originalRecordName + ' - ' + todayStr;
-        }
-        cloning.put(sObjectSummary.nameField, nameValue);
       }
       clonings.add(cloning);
     }
@@ -602,15 +684,15 @@ public with sharing class RecordCloneHandler {
 
         ChildBatch batch = new ChildBatch();
         batch.summary = childSummary;
+        batch.nameFormat = sObjectSummary.childRecordNameFormat;
+        batch.timestamp = todayStr;
         for (
           Integer parentIndex = 0; parentIndex < originals.size(); parentIndex++
         ) {
-          sObject[] children;
-          try {
-            children = originals[parentIndex].getSObjects(childRelName);
-          } catch (System.SObjectException e) {
-            continue;
-          }
+          List<sObject> children = readChildren(
+            originals[parentIndex],
+            childRelName
+          );
 
           if (children == null) {
             continue;
@@ -626,34 +708,7 @@ public with sharing class RecordCloneHandler {
             opportunityIds.add(clonings[parentIndex].Id);
           }
 
-          for (Integer i = 0; i < children.size(); i++) {
-            batch.originalIds.add(children[i].Id);
-            children[i].put('Id', null);
-            if (childSummary.isNamable) {
-              String originalRecordName = (String) children[i]
-                .get(childSummary.nameField);
-              String nameValue = originalRecordName;
-              if (
-                sObjectSummary.childRecordNameFormat ==
-                RecordCloneChildRecordNamePicklist.valueWithCloned
-              ) {
-                nameValue = 'Cloned - ' + originalRecordName;
-              } else if (
-                sObjectSummary.childRecordNameFormat ==
-                RecordCloneChildRecordNamePicklist.valueWithClonedAndDate
-              ) {
-                nameValue = 'Cloned - ' + originalRecordName + ' - ' + todayStr;
-              }
-              children[i].put(childSummary.nameField, nameValue);
-            }
-
-            children[i]
-              .put(
-                childSummary.parentRelationshipField,
-                clonings[parentIndex].Id
-              );
-          }
-          batch.rows.addAll(children);
+          addPreparedChildren(batch, children, clonings[parentIndex].Id);
         }
         if (!batch.rows.isEmpty()) {
           batches.add(batch);
