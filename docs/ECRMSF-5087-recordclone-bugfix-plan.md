@@ -305,8 +305,9 @@ because the page was already there. Both instances now have an identifier. After
 completed on the new org (49 applications, no load errors), all 43 tests pass with 88% coverage, and the harness
 gate passes.
 
-**Not verified.** One uninterrupted `dev_org` build with the fix in place. The fix was checked with a validate-only
-deploy and by running the remaining steps through `sample_data`, which uses the same tasks.
+**Verified on a clean rebuild (2026-11-13).** A second `dev_org` build from the committed tree ran to the end. The new
+org has 49 sample applications, the armed retired-term scenario, all 43 tests passing at 88% coverage, and a passing
+`check_clone_harness`.
 
 ### Still needs the real org
 
