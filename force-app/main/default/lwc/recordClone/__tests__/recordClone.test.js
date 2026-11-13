@@ -51,6 +51,17 @@ jest.mock(
 const getNameFieldValueAdapter = registerApexTestWireAdapter(getNameFieldValue);
 const getSObjectSummaryAdapter = registerApexTestWireAdapter(getSObjectSummary);
 
+// Lets the promise callbacks chained after a rejection run (catch, then finally). No timer is
+// needed: they are a fixed number of microtask turns.
+const flushPromises = () =>
+  [1, 2, 3, 4, 5].reduce((chain) => chain.then(() => {}), Promise.resolve());
+
+// The spinner that is on screen, by its accessible name.
+const spinnerNamed = (element, name) =>
+  Array.from(element.shadowRoot.querySelectorAll("lightning-spinner")).find(
+    (spinner) => spinner.alternativeText === name
+  );
+
 describe("c-record-clone", () => {
   afterEach(() => {
     while (document.body.firstChild) {
@@ -85,8 +96,40 @@ describe("c-record-clone", () => {
     getSObjectSummaryAdapter.emit(sObjectSummaryNonSupport);
 
     return Promise.resolve().then(() => {
-      const errorMessage = element.shadowRoot.querySelector("h6");
-      expect(errorMessage.textContent).toBe("This sObject is not supported.");
+      const notification = element.shadowRoot.querySelector(
+        ".slds-scoped-notification"
+      );
+      expect(notification.textContent).toContain(
+        `${sObjectSummaryNonSupport.label} records can't be cloned.`
+      );
+      expect(element.shadowRoot.querySelector("lightning-button")).toBeNull();
+      expect(element.shadowRoot.querySelector("lightning-input")).toBeNull();
+    });
+  });
+
+  it("explains in plain language why a record type cannot be cloned", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
+    });
+    document.body.appendChild(element);
+    getSObjectSummaryAdapter.emit({
+      ...sObjectSummaryNonSupport,
+      label: "Task",
+      errorMessage: "NOT_CREATEABLE,IS_TASK,SOMETHING_NEW"
+    });
+
+    return Promise.resolve().then(() => {
+      const reasons = Array.from(
+        element.shadowRoot.querySelectorAll(".slds-scoped-notification li")
+      );
+      expect(reasons.map((item) => item.textContent.trim())).toEqual([
+        // for a whole object, not a single field
+        "You can't create records of this type",
+        "Tasks aren't supported",
+        // a code the interface does not know is shown as it came
+        "SOMETHING_NEW"
+      ]);
+      expect(reasons[1].title).toBe("IS_TASK");
     });
   });
 
@@ -170,8 +213,8 @@ describe("c-record-clone", () => {
     getSObjectSummaryAdapter.error(sObjectSummaryError);
 
     return Promise.resolve().then(() => {
-      const initElem = element.shadowRoot.querySelector("h6");
-      expect(initElem.textContent).toBe("Initializing...");
+      expect(spinnerNamed(element, "Initializing")).toBeTruthy();
+      expect(element.shadowRoot.querySelector("lightning-button")).toBeNull();
     });
   });
 
@@ -272,8 +315,14 @@ describe("c-record-clone", () => {
         cloneButton.click();
       })
       .then(() => {
-        const cloningText = element.shadowRoot.querySelector("h6");
-        expect(cloningText.textContent).toBe("Cloning...");
+        // the form stays where it is, locked, with a spinner over it
+        expect(spinnerNamed(element, "Cloning")).toBeTruthy();
+        expect(
+          element.shadowRoot.querySelector("lightning-button").disabled
+        ).toBe(true);
+        expect(
+          element.shadowRoot.querySelector("lightning-input").disabled
+        ).toBe(true);
       })
       .then(() => {
         const { pageReference } = getNavigateCalledWith();
@@ -373,8 +422,14 @@ describe("c-record-clone", () => {
         cloneButton.click();
       })
       .then(() => {
-        const cloningText = element.shadowRoot.querySelector("h6");
-        expect(cloningText.textContent).toBe("Cloning...");
+        // the form stays where it is, locked, with a spinner over it
+        expect(spinnerNamed(element, "Cloning")).toBeTruthy();
+        expect(
+          element.shadowRoot.querySelector("lightning-button").disabled
+        ).toBe(true);
+        expect(
+          element.shadowRoot.querySelector("lightning-input").disabled
+        ).toBe(true);
       })
       .then(() => {
         expect(handler).toHaveBeenCalled();
@@ -394,6 +449,7 @@ describe("c-record-clone", () => {
     const handler = jest.fn();
     element.addEventListener(ShowToastEventName, handler);
 
+    element.recordId = "MockRecordId";
     element.childRecordNameType = "originalName";
     execClone.mockRejectedValue({
       message: "mock error"
@@ -403,25 +459,86 @@ describe("c-record-clone", () => {
 
     return Promise.resolve()
       .then(() => {
-        const cloneButton =
-          element.shadowRoot.querySelector("lightning-button");
-        cloneButton.click();
+        element.shadowRoot.querySelector("lightning-button").click();
       })
       .then(() => {
-        const cloningText = element.shadowRoot.querySelector("h6");
-        expect(cloningText.textContent).toBe("Cloning...");
+        expect(spinnerNamed(element, "Cloning")).toBeTruthy();
       })
       .then(() => {
         expect(handler).toHaveBeenCalled();
         expect(handler.mock.calls[0][0].detail.title).toBe("RecordClone Error");
-        expect(handler.mock.calls[0][0].detail.message).toBe(
-          "There is no available Record Id"
-        );
+        expect(handler.mock.calls[0][0].detail.message).toBe("mock error");
         expect(handler.mock.calls[0][0].detail.variant).toBe("error");
+      })
+      .then(flushPromises)
+      .then(() => {
+        // after the failure the user can correct the name and try again
+        expect(spinnerNamed(element, "Cloning")).toBeFalsy();
+        expect(
+          element.shadowRoot.querySelector("lightning-button").disabled
+        ).toBe(false);
+        expect(
+          element.shadowRoot.querySelector("lightning-input").disabled
+        ).toBe(false);
       });
   });
 
-  it("toggles related list on click list-title", () => {
+  it("shows the label the admin set and gives the input a name otherwise", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
+    });
+    document.body.appendChild(element);
+    element.nameInputLabel = "New application name";
+    getNameFieldValueAdapter.emit("Test Record Name");
+    getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
+
+    return Promise.resolve()
+      .then(() => {
+        // a label the admin typed is for people to read, so it is shown
+        const input = element.shadowRoot.querySelector("lightning-input");
+        expect(input.label).toBe("New application name");
+        expect(input.variant).toBe("standard");
+
+        element.nameInputLabel = "";
+      })
+      .then(() => {
+        // with none, the input still has a name for a screen reader, but it is not drawn
+        const input = element.shadowRoot.querySelector("lightning-input");
+        expect(input.label).toBe("New record name");
+        expect(input.variant).toBe("label-hidden");
+      });
+  });
+
+  it("does not lock the form when there is no record id", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
+    });
+    document.body.appendChild(element);
+    const handler = jest.fn();
+    element.addEventListener(ShowToastEventName, handler);
+
+    getNameFieldValueAdapter.emit("Test Record Name");
+    getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
+
+    return Promise.resolve()
+      .then(() => {
+        element.shadowRoot.querySelector("lightning-button").click();
+      })
+      .then(() => {
+        expect(execClone).not.toHaveBeenCalled();
+        expect(handler).toHaveBeenCalled();
+        expect(handler.mock.calls[0][0].detail.message).toBe(
+          "There is no available Record Id"
+        );
+        // nothing was started, so nothing is left spinning or disabled
+        expect(spinnerNamed(element, "Cloning")).toBeFalsy();
+        expect(
+          element.shadowRoot.querySelector("lightning-button").disabled
+        ).toBe(false);
+      });
+  });
+
+  it("lists the details in accordion sections when details are shown", () => {
     const element = createElement("c-record-clone", {
       is: RecordClone
     });
@@ -430,30 +547,42 @@ describe("c-record-clone", () => {
     getNameFieldValueAdapter.emit("Test Record Name");
     getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
 
-    return Promise.resolve()
-      .then(() => {
-        const item = element.shadowRoot.querySelector(
-          "c-record-clone-related-list-item"
-        );
+    return Promise.resolve().then(() => {
+      const accordion = element.shadowRoot.querySelector("lightning-accordion");
+      expect(accordion).not.toBeNull();
+      expect(accordion.allowMultipleSectionsOpen).toBe(true);
 
-        const listItemTitle = item.shadowRoot.querySelector(
-          ".details-item-title"
-        );
-        listItemTitle.click();
+      const sections = Array.from(
+        element.shadowRoot.querySelectorAll("lightning-accordion-section")
+      );
+      expect(sections.map((section) => section.label)).toEqual([
+        "Included child objects (1)",
+        expect.stringMatching(/^Excluded fields \(\d+\)$/),
+        expect.stringMatching(/^Included fields \(\d+\)$/)
+      ]);
 
-        expect(listItemTitle.textContent).toBe("Included child objects (1)");
-        expect(listItemTitle).not.toBeUndefined();
-        expect(listItemTitle).not.toBeNull();
-      })
-      .then(() => {
-        const item = element.shadowRoot.querySelector(
-          "c-record-clone-related-list-item"
-        );
-        const detailList = item.shadowRoot.querySelector(
-          ".details-item-elements"
-        );
-        expect(detailList).not.toBeUndefined();
-        expect(detailList).not.toBeNull();
-      });
+      // every section holds one list, handed its items and a name for assistive technology
+      const lists = element.shadowRoot.querySelectorAll(
+        "c-record-clone-related-list-item"
+      );
+      expect(lists).toHaveLength(3);
+      expect(lists[0].title).toBe("Included child objects (1)");
+      expect(lists[0].okItems).toHaveLength(1);
+    });
+  });
+
+  it("does not render the details unless asked to", () => {
+    const element = createElement("c-record-clone", {
+      is: RecordClone
+    });
+    document.body.appendChild(element);
+    getNameFieldValueAdapter.emit("Test Record Name");
+    getSObjectSummaryAdapter.emit(sObjectSummarySuccess);
+
+    return Promise.resolve().then(() => {
+      expect(
+        element.shadowRoot.querySelector("lightning-accordion")
+      ).toBeNull();
+    });
   });
 });

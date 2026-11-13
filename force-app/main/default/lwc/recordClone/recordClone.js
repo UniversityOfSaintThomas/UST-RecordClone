@@ -10,6 +10,7 @@ import getNameFieldValue from "@salesforce/apex/RecordCloneController.getNameFie
 import execClone from "@salesforce/apex/RecordCloneController.execClone";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { NavigationMixin } from "lightning/navigation";
+import { describeReasons } from "c/recordCloneReasons";
 
 export default class RecordClone extends NavigationMixin(LightningElement) {
   @api recordId;
@@ -22,7 +23,9 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
   @api excludedFieldNames = "";
   @api childRelationshipNames = "";
   @api childRecordNameType = "";
-  @api targetRecordId;
+
+  // The record being cloned: the template record if one is set, otherwise the current record.
+  targetRecordId;
 
   nameField;
   objectName;
@@ -205,7 +208,6 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
   };
 
   onclickClone = () => {
-    this.isCloning = true;
     // if templateRecordId is specified, prioritize  it
     const recordId = this.templateRecordId
       ? this.templateRecordId
@@ -214,6 +216,7 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
       this.showErrorToast(`There is no available Record Id`);
       return;
     }
+    this.isCloning = true;
 
     execClone({
       recordId,
@@ -268,7 +271,38 @@ export default class RecordClone extends NavigationMixin(LightningElement) {
     })`;
   }
 
+  // A label that the admin typed is shown. With none, the input keeps a default label for screen
+  // readers and hides it, as the card already says what the field is for.
+  get nameInputLabelText() {
+    return this.nameInputLabel || "New record name";
+  }
+
   get nameInputVariant() {
-    return this.nameInputLabel ? "label-hidden" : "standard";
+    return this.nameInputLabel ? "standard" : "label-hidden";
+  }
+
+  get notClonableHeadline() {
+    const label = this.sObjectSummary.label || "This type of";
+    return `${label} records can't be cloned.`;
+  }
+
+  get notClonableReasons() {
+    return describeReasons(this.sObjectSummary.errorMessage, "object");
+  }
+
+  get hasNotClonableReasons() {
+    return this.notClonableReasons.length > 0;
+  }
+
+  get hasChildItems() {
+    return this.clonableChildren.length + this.notClonableChildren.length > 0;
+  }
+
+  get hasExcludedFields() {
+    return this.notClonableFields.length > 0;
+  }
+
+  get hasIncludedFields() {
+    return this.clonableFields.length > 0;
   }
 }

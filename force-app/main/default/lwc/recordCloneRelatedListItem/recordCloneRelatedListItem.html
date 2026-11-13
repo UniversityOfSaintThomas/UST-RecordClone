@@ -6,35 +6,74 @@
   For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause 
 -->
   <template if:true={hasElements}>
-    <li class="details-item">
-      <h4 onclick={toggle} class="details-item-title">
-        <lightning-icon
-          class="toggle-icon"
-          icon-name={iconName}
-          size="x-small"
-        ></lightning-icon>
-        {title}
-        <template if:true={isError}>
-          <br />
-          <span class="child-rel-error"> {errorMessage} </span>
+    <template if:true={isError}>
+      <div
+        class="
+          slds-scoped-notification slds-media slds-media_center
+          slds-theme_error
+          slds-m-bottom_small
+        "
+        role="alert"
+      >
+        <div class="slds-media__figure">
+          <lightning-icon
+            icon-name="utility:error"
+            size="x-small"
+            variant="inverse"
+            alternative-text="Error"
+          ></lightning-icon>
+        </div>
+        <div class="slds-media__body">
+          <p>{errorMessage}</p>
+        </div>
+      </div>
+    </template>
+
+    <!-- a long list scrolls inside its own region, which a keyboard user can focus and scroll -->
+    <div
+      class="slds-scrollable_y c-detail-list"
+      role="region"
+      tabindex="0"
+      aria-label={title}
+    >
+      <ul>
+        <template for:each={okItems} for:item="ok">
+          <li
+            key={ok.apiName}
+            class="slds-has-divider_bottom-space slds-p-vertical_x-small"
+          >
+            <div>{ok.label}</div>
+            <div
+              class="slds-text-color_weak slds-text-body_small slds-hyphenate"
+            >
+              {ok.apiName}
+            </div>
+          </li>
         </template>
-      </h4>
-      <template if:true={shouldShow}>
-        <ul class="details-item-elements">
-          <template for:each={okItems} for:item="ok">
-            <li key={ok.apiName}>
-              {ok.label} (<span class="apiname">{ok.apiName}</span>)
-            </li>
-          </template>
-          <template for:each={ngItems} for:item="ng">
-            <li key={ng.apiName}>
-              <del>{ng.label} (<span class="apiname">{ng.apiName}</span>)</del>
-              :
-              <span class="ncf-reason">{ng.errorMessage}</span>
-            </li>
-          </template>
-        </ul>
-      </template>
-    </li>
+        <template for:each={ngItemsWithReasons} for:item="ng">
+          <li
+            key={ng.apiName}
+            class="slds-has-divider_bottom-space slds-p-vertical_x-small"
+          >
+            <div>{ng.label}</div>
+            <div
+              class="slds-text-color_weak slds-text-body_small slds-hyphenate"
+            >
+              {ng.apiName}
+            </div>
+            <template for:each={ng.reasons} for:item="reason">
+              <div
+                key={reason.code}
+                class="slds-text-body_small slds-m-top_xx-small"
+                data-id="reason"
+                title={reason.code}
+              >
+                {reason.text}
+              </div>
+            </template>
+          </li>
+        </template>
+      </ul>
+    </div>
   </template>
 </template>

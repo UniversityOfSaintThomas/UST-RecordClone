@@ -5,8 +5,15 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 import { LightningElement, api } from "lwc";
+import { describeReasons } from "c/recordCloneReasons";
 
+/**
+ * The list inside one section of the clone details: the items that will be cloned, and the items
+ * that will not, each with the reasons. The section heading and its open/closed state belong to the
+ * parent's accordion.
+ */
 export default class RecordCloneRelatedListItem extends LightningElement {
+  // Names the scrollable list for assistive technology.
   @api
   title;
   @api
@@ -17,19 +24,12 @@ export default class RecordCloneRelatedListItem extends LightningElement {
   errorMessage;
   @api
   isError = false;
-
-  shouldShow = false;
-
-  toggle() {
-    this.shouldShow = !this.shouldShow;
-  }
+  // What the items are: "field" (the default) or "object", which changes how some reasons read.
+  @api
+  kind = "field";
 
   get hasElements() {
     return this.totalLength > 0;
-  }
-
-  get iconName() {
-    return this.shouldShow ? "utility:contract_alt" : "utility:expand_alt";
   }
 
   get okLength() {
@@ -42,5 +42,13 @@ export default class RecordCloneRelatedListItem extends LightningElement {
 
   get totalLength() {
     return this.okLength + this.ngLength;
+  }
+
+  // The items that will not be cloned, with each reason code turned into a sentence.
+  get ngItemsWithReasons() {
+    return (this.ngItems || []).map((item) => ({
+      ...item,
+      reasons: describeReasons(item.errorMessage, this.kind)
+    }));
   }
 }

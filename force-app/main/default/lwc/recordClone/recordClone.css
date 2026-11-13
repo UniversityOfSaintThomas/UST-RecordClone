@@ -4,9 +4,11 @@
   SPDX-License-Identifier: BSD-3-Clause
   For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause 
 */
-.slds-card__header {
-  padding-top: 0.75rem;
-}
-.slds-card__footer {
-  padding: 0;
+
+/*
+  The name input asks for room before the button wraps beneath it. The shared grid classes are
+  viewport based, and this component is also used in narrow sidebars and utility bars.
+*/
+.c-name-field {
+  flex-basis: var(--slds-g-sizing-14, 15rem);
 }

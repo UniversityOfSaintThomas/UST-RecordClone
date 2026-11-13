@@ -123,6 +123,14 @@ original, wrong child counts). The data is never changed.
 - Apex is case-insensitive: a parameter named `accountAccess` shadows an enum named `AccountAccess`.
 - At API 68.0 every `componentInstance` in a FlexiPage needs an `<identifier>`. A page that is already in an old org
   can deploy without one, and the same page fails on a fresh build.
+- Lightning caches LWC bundles in the browser, so after a deploy the page can keep showing the old component. Clear
+  IndexedDB, local and session storage and Cache storage, reload, wait about 25 seconds and reload again. Confirm with a
+  property that only the new code has before judging a screenshot.
+- `sfdx-lwc-jest` 0.10 cannot compile the `lwc:if` directive, so templates use `if:true` and `if:false`. They work on
+  the platform at API 68.0. Moving to `lwc:if` needs a newer test toolchain first.
+- A Lightning page that holds the LWC components can be previewed from its App Builder URL
+  (`/visualEditor/appBuilder.app?pageId=<FlexiPage Id>`) when the tab URL says "Page doesn't exist". The builder draws
+  the components in an iframe, so read results from screenshots or the network log, not from the DOM.
 - `cci org info` prints the scratch org password. Never copy that output into a file or a message.
 - The sample permission set `Sample_Data_Access` is required for field access; without it describe results look empty.
 - `get_file_problems` (IDE MCP) cannot resolve Apex built-ins in this project, so it reports noise on every class.

@@ -309,6 +309,52 @@ gate passes.
 org has 49 sample applications, the armed retired-term scenario, all 43 tests passing at 88% coverage, and a passing
 `check_clone_harness`.
 
+### Interface refresh (updated 2026-11-13)
+
+The three components were rebuilt on SLDS blueprints and base components, with no overrides of `.slds-*` classes and
+no hard-coded colors, spacing or fonts, so they follow the SLDS 1 and SLDS 2 themes. Public properties in
+`js-meta.xml` are unchanged, so existing pages keep working. Screenshots are in `ai-logs/screenshots/`.
+
+**What users see now**
+
+- **Clone form:** a visible label, the name input and a button with an icon on one row. The button wraps beneath the
+  input when the space is narrow (checked at 340px and 260px, no overflow).
+- **While cloning:** the form stays in place, locked, under a spinner. Before, it was replaced by the word "Cloning...".
+- **Not supported:** a notification that names the type and gives the reasons in plain language ("Tasks aren't
+  supported"), where there was a bare "This sObject is not supported."
+- **Details:** three accordion sections (child objects, excluded fields, included fields). Each holds a keyboard
+  reachable, labelled, scrollable list. Items that will not be cloned say why in a sentence, with the reason code kept
+  as a tooltip. The shared wording lives in `c/recordCloneReasons`.
+- **Configuration helper:** a card with a table of relationship names, a read-only field holding the comma-separated
+  list to copy, and an error notification for an invalid object.
+
+**Bugs found and fixed on the way**
+
+- **Inverted label:** a name-input label set by an admin was hidden, and with none set the input had an empty
+  accessible name. That is why the sample page's "New application name" never showed.
+- **Stuck form:** with no record id, the old code set the "cloning" state before checking for the id and never cleared
+  it.
+- **Configurator on non-record pages:** it sent an empty string as the record Id, which Apex rejects
+  ("Value provided is invalid for action parameter 'recordId' of type 'Id'"). It showed "Invalid sObject" on every App,
+  Home, Utility Bar and Flow page, the pages where only the object-name property is offered. This predates the
+  refresh. It now sends `null`.
+- **Reason wording:** one code, `NOT_CREATEABLE`, means "you can't create these records" for an object and "it can't be
+  set on a new record" for a field. The text now depends on which one is being described.
+- `targetRecordId` was a public property that the component reassigned, which was the long-standing ESLint error. It
+  is private now, and ESLint exits clean.
+
+**Checks.** SLDS linter 25 warnings to 0. The analyzer from `design-systems-slds-validate` scores 100 in all four
+categories with no findings on all three components, including the invented-hook check. Jest 19 to 48 tests, ESLint
+clean. Six mutations (inverted label, no default label, form not locked, stuck state, no reasons, empty-string
+Id) are each caught by a test. In the browser: the new bundle, keyboard operation (Tab order, Enter and Space on the
+headers, the list as its own tab stop that scrolls with the arrow keys), narrow widths, the error toast followed by an
+unlocked form, the not-supported state and the configurator.
+
+**Not verified.** SLDS 2 dark mode. Emulating the browser's color scheme does nothing in Salesforce, and this org
+offers no appearance setting under personal settings, so the real theme could not be switched. The styles use only
+utility classes and `--slds-g-*` hooks (with fallbacks), which is what the theme changes, but the dark rendering
+itself has not been seen.
+
 ### Still needs the real org
 
 - Which fields on the real Banner objects to exclude (needs the Enterprise team's list). The mechanism is built; the

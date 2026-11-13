@@ -24,8 +24,14 @@ export default class RecordCloneConfigurator extends LightningElement {
 
   isInvalidObjectName = false;
 
+  // Apex rejects an empty string as an Id, and a wire that is given undefined never runs. So on a page
+  // with no record (app, home, utility bar, flow screen) the missing Id is sent as null.
+  get recordIdParameter() {
+    return this.recordId || null;
+  }
+
   @wire(showAllChildRelationships, {
-    recordId: "$recordId",
+    recordId: "$recordIdParameter",
     objectName: "$targetSObject"
   })
   allChildRelationships({ error, data }) {
@@ -41,7 +47,7 @@ export default class RecordCloneConfigurator extends LightningElement {
     const childrenListStr = [];
     this.objectName = data.objectName;
     for (let key of Object.keys(data.relations)) {
-      childrenList.push(key + " : " + data.relations[key]);
+      childrenList.push({ name: key, label: data.relations[key] });
       childrenListStr.push(key);
     }
     this.childrenList = childrenList;
@@ -50,6 +56,10 @@ export default class RecordCloneConfigurator extends LightningElement {
 
   get hasObjectName() {
     return this.objectName && this.objectName.length > 0;
+  }
+
+  get childrenTableLabel() {
+    return `Child relationships of ${this.objectName}`;
   }
 
   buildErrorMessage = (errors) => {
@@ -81,6 +91,10 @@ export default class RecordCloneConfigurator extends LightningElement {
       }
       if (errors.body.pageErrors) {
         errorMessage += this.buildErrorMessage(errors.body.pageErrors);
+      }
+      // Apex exceptions (AuraHandledException) put their text in body.message
+      if (!errorMessage && typeof errors.body.message === "string") {
+        errorMessage = errors.body.message;
       }
     }
     const errorToast = new ShowToastEvent({
