@@ -20,7 +20,7 @@ records to a new term).
 | `force-app/main/default/classes/`                         | `RecordCloneController`, `RecordCloneHandler`, `sObjectSummary`, `RecordCloneDebugController`, `RecordCloneChildRecordNamePicklist`, and their tests |
 | `force-app/main/default/lwc/`                             | `recordClone` (the button and toasts), `recordCloneConfigurator`, `recordCloneRelatedListItem`                                                       |
 | `force-app/main/default/objects/RecordCloneSettings__mdt` | Custom metadata that stores a clone configuration per object                                                                                         |
-| `unpackaged/sample/model`                                 | Sample objects, fields, validation rules, record page, permission set, settings record. **Never packaged**                                           |
+| `unpackaged/sample/model`                                 | Sample objects, tabs, fields, validation rules, record page, permission set, settings record. **Never packaged**                                     |
 | `unpackaged/sample/tools`                                 | `RecordCloneHarness` and tests that need the sample objects. **Never packaged**                                                                      |
 | `datasets/dev/dev.recipe.yml`                             | Snowfakery recipe for the sample data (`datasets/mapping.yml` is an unused leftover)                                                                 |
 | `scripts/`                                                | `arm_sample_clone_failures.apex` and `clone_harness/part1-4.apex`                                                                                    |

@@ -187,13 +187,13 @@ than hand-roll a parallel per-object Flow solution, because:
 The root causes below were checked against a sample dataset instead of guessed. It lives outside
 `force-app`, so it is never packaged, and `dev_org` builds it automatically.
 
-| What                                                                   | Where                                              |
-| ---------------------------------------------------------------------- | -------------------------------------------------- |
-| Sample objects, fields, validation rule, lookup filter, permission set | `unpackaged/sample/model`                          |
-| Harness class and its test (dev orgs only)                             | `unpackaged/sample/tools`                          |
-| Snowfakery dataset (49 applications, ~540 rows)                        | `datasets/dev/dev.recipe.yml`                      |
-| Step that breaks two scenarios after the load                          | `scripts/arm_sample_clone_failures.apex`           |
-| Full harness report, one file per part                                 | `scripts/clone_harness/part1.apex` to `part4.apex` |
+| What                                                                         | Where                                              |
+| ---------------------------------------------------------------------------- | -------------------------------------------------- |
+| Sample objects, tabs, fields, validation rule, lookup filter, permission set | `unpackaged/sample/model`                          |
+| Harness class and its test (dev orgs only)                                   | `unpackaged/sample/tools`                          |
+| Snowfakery dataset (49 applications, ~540 rows)                              | `datasets/dev/dev.recipe.yml`                      |
+| Step that breaks two scenarios after the load                                | `scripts/arm_sample_clone_failures.apex`           |
+| Full harness report, one file per part                                       | `scripts/clone_harness/part1.apex` to `part4.apex` |
 
 CumulusCI tasks and flows (all in `cumulusci.yml`):
 
@@ -206,6 +206,12 @@ The sample objects are a stand-in. They have the same shape as the Banner object
 lookups, sibling lookups, external IDs, a standard Opportunity), not the same schema. They show which
 classes of problem RecordClone mishandles. They cannot say which fields on the real objects need
 attention; that still needs the Enterprise team's list.
+
+**Finding the sample objects.** Each custom sample object has a tab (`unpackaged/sample/model/tabs`), and
+`Sample_Data_Access` makes all eight visible, so they appear under "Items" in the App Launcher (search "Sample"; the
+list shows seven and "View More" holds the rest). A tab is invisible without that grant. There is no app, so they are
+not in a navigation bar until someone adds them. The icons are chosen by meaning, one per object; the platform
+accepts any name text after the icon number, so the number is what counts.
 
 ### Findings that change the root-cause analysis
 
